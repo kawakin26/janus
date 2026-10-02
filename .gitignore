@@ -64,6 +64,9 @@ dev-dist/
 # TypeScript インクリメンタルビルド情報
 *.tsbuildinfo
 
+# ===== デバッグ用一時ファイル =====
+temp/
+
 # ===== エディタ / OS =====
 .vscode/*
 !.vscode/extensions.json
