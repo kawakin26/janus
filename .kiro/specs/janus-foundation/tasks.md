@@ -47,7 +47,7 @@
   - APITestCase でアップロード→一覧→解決を検証
   - _要件: 3-3, 3-5_
 
-- [ ] 7. フロントエンド土台（Vite + React + TS）
+- [x] 7. フロントエンド土台（Vite + React + TS）
   - `frontend/` に Vite + React + TypeScript を初期化。React Router を導入し、`/`（一覧）・`/view/*`（閲覧）・`/edit/*`（編集）・`/login` のルートを用意
   - _要件: 2-6_
 

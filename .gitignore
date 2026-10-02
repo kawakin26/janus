@@ -61,6 +61,9 @@ dist-ssr/
 .vite/
 dev-dist/
 
+# TypeScript インクリメンタルビルド情報
+*.tsbuildinfo
+
 # ===== エディタ / OS =====
 .vscode/*
 !.vscode/extensions.json
