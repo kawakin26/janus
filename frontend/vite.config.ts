@@ -18,10 +18,17 @@ export default defineConfig({
     },
   },
   // Vitest 設定（別ファイルを作らず vite.config.ts に同居させる）。
-  // RestClient のユニットテストは fetch をモックするため DOM 不要＝node 環境で動かす。
+  // 既定の実行環境は node。RestClient のユニットテスト（rest-client.test.ts）は
+  // fetch をモックするだけで DOM 不要なので、既定の node のまま壊さず走り続ける。
+  // 一方、認証 UI / ルートガードのコンポーネントテスト（*.test.tsx）は DOM が要るので、
+  // 各ファイル先頭の docblock コメント `// @vitest-environment jsdom` で
+  // ファイル単位に jsdom を指定する（environmentMatchGlobs は Vitest 3 で非推奨の
+  // ため使わず、per-file 指定で node / jsdom を両立させる）。
   // FormData/File/Blob は Node 20 のグローバルに存在するためポリフィル不要。
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
+    // @testing-library/jest-dom のカスタムマッチャ（toBeInTheDocument 等）を有効化する。
+    setupFiles: ['src/test/setup.ts'],
   },
 })
