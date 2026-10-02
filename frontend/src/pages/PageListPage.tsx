@@ -12,7 +12,9 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useStorage } from '../storage/StorageProvider'
+import AppLayout from '../components/AppLayout'
 import { usePageError } from './use-page-error'
+import styles from './PageListPage.module.css'
 import type { PageSummary } from '../storage/types'
 
 /** 入力パスを先頭 / 付き・末尾 / 無しの正規形へ整える。 */
@@ -66,12 +68,13 @@ function PageListPage() {
   }
 
   return (
-    <main>
+    <AppLayout>
       <h1>ページ一覧</h1>
+      <p className={styles.lead}>ルート直下（/）のページ一覧です。</p>
 
-      <section>
+      <section className={styles.createSection}>
         <h2>新規作成</h2>
-        <form onSubmit={handleCreate} noValidate>
+        <form onSubmit={handleCreate} noValidate className={styles.createForm}>
           <label htmlFor="new-path">パス</label>
           <input
             id="new-path"
@@ -94,7 +97,7 @@ function PageListPage() {
       ) : items.length === 0 ? (
         <p>ページがありません</p>
       ) : (
-        <ul>
+        <ul className={styles.list}>
           {items.map((item) => (
             <li key={item.path}>
               <Link to={`/view${item.path}`}>{item.title || item.path}</Link>
@@ -102,7 +105,7 @@ function PageListPage() {
           ))}
         </ul>
       )}
-    </main>
+    </AppLayout>
   )
 }
 

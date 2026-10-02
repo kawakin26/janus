@@ -13,7 +13,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useStorage } from '../storage/StorageProvider'
 import MarkdownRenderer from '../markdown/MarkdownRenderer'
+import AppLayout from '../components/AppLayout'
+import Breadcrumbs from '../components/Breadcrumbs'
 import { usePageError } from './use-page-error'
+import styles from './PageViewPage.module.css'
 import type { Page, PageSummary } from '../storage/types'
 
 function PageViewPage() {
@@ -81,39 +84,50 @@ function PageViewPage() {
 
   if (loading) {
     return (
-      <main>
+      <AppLayout>
         <p>読み込み中...</p>
-      </main>
+      </AppLayout>
     )
   }
 
   if (error !== null) {
     return (
-      <main>
+      <AppLayout>
         <p role="alert" aria-live="assertive">
           {error}
         </p>
-      </main>
+      </AppLayout>
     )
   }
 
   // 404: ページが存在しない。新規作成への導線を出す。
   if (page === null) {
     return (
-      <main>
+      <AppLayout>
+        <Breadcrumbs path={path} />
         <h1>ページが見つかりません</h1>
         <p>パス: {path}</p>
         <Link to={`/edit${path}`}>このパスで新規作成</Link>
-      </main>
+      </AppLayout>
     )
   }
 
   return (
-    <main>
+    <AppLayout>
+      <Breadcrumbs path={path} />
       <h1>{page.title}</h1>
-      <nav>
-        <Link to={`/edit${path}`}>編集</Link>
-        <button type="button" onClick={handleDelete}>
+      <nav aria-label="ページ操作" className={styles.actions}>
+        <Link to="/" className={styles.listLink}>
+          一覧へ
+        </Link>
+        <Link to={`/edit${path}`} className={styles.editButton}>
+          編集
+        </Link>
+        <button
+          type="button"
+          onClick={handleDelete}
+          className={styles.deleteButton}
+        >
           削除
         </button>
       </nav>
@@ -132,7 +146,7 @@ function PageViewPage() {
           </ul>
         </section>
       )}
-    </main>
+    </AppLayout>
   )
 }
 

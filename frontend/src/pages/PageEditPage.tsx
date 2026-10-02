@@ -14,9 +14,12 @@
 
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useStorage } from '../storage/StorageProvider'
+import AppLayout from '../components/AppLayout'
+import Breadcrumbs from '../components/Breadcrumbs'
 import { usePageError } from './use-page-error'
+import styles from './PageEditPage.module.css'
 import { ApiError } from '../storage/types'
 
 function PageEditPage() {
@@ -91,23 +94,27 @@ function PageEditPage() {
 
   if (loading) {
     return (
-      <main>
+      <AppLayout>
         <p>読み込み中...</p>
-      </main>
+      </AppLayout>
     )
   }
 
+  // キャンセル先: 既存ページなら閲覧へ戻る、新規なら一覧へ戻る。
+  const cancelTo = isExisting ? `/view${path}` : '/'
+
   return (
-    <main>
+    <AppLayout>
+      <Breadcrumbs path={path} />
       <h1>{isExisting ? 'ページ編集' : 'ページ新規作成'}</h1>
       <p>パス: {path}</p>
-      <form onSubmit={handleSubmit} noValidate>
+      <form onSubmit={handleSubmit} noValidate className={styles.form}>
         {error !== null && (
           <p role="alert" aria-live="assertive">
             {error}
           </p>
         )}
-        <div>
+        <div className={styles.field}>
           <label htmlFor="title">タイトル</label>
           <input
             id="title"
@@ -117,7 +124,7 @@ function PageEditPage() {
             onChange={(e) => setTitle(e.target.value)}
           />
         </div>
-        <div>
+        <div className={styles.field}>
           <label htmlFor="body">本文（Markdown）</label>
           <textarea
             id="body"
@@ -127,11 +134,16 @@ function PageEditPage() {
             rows={20}
           />
         </div>
-        <button type="submit" disabled={submitting}>
-          {submitting ? '保存中...' : '保存'}
-        </button>
+        <div className={styles.actions}>
+          <button type="submit" disabled={submitting}>
+            {submitting ? '保存中...' : '保存'}
+          </button>
+          <Link to={cancelTo} className={styles.cancel}>
+            キャンセル
+          </Link>
+        </div>
       </form>
-    </main>
+    </AppLayout>
   )
 }
 
