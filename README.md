@@ -27,7 +27,7 @@ backend と frontend を 1 リポジトリに同居させています。フェ�
 
 ## 開発段階（フェーズ）
 
-- **フェーズ 1**（現在）: サーバーモードの基盤。ページ CRUD、Markdown 表示、地図記法の表示、認証・ユーザー管理、統一 API 契約の定義。
+- **フェーズ 1**（完了）: サーバーモードの基盤。ページ CRUD、Markdown 表示、地図記法の表示、アセット（添付）管理、認証・ユーザー管理、統一 API 契約の定義。
 - **フェーズ 2**: 権限管理、リビジョン機能。
 - **フェーズ 3**: コメント / メモ、draw.io 描画、CAD 自動変換、ローカルモード（PWA + IndexedDB）、地図 GUI 編集・現場写真添付。
 - **フェーズ 4**: 全文検索（ローカル N-gram / サーバー FTS5）。
@@ -36,9 +36,9 @@ backend と frontend を 1 リポジトリに同居させています。フェ�
 
 ## セットアップ
 
-> 起動手順・環境変数の詳細は実装進行に合わせて追記していきます（タスク 12 で最終整備予定）。
+サーバーモードは backend（API）と frontend（UI）の 2 プロセスで開発します。最小構成では backend は Python 1 プロセス + SQLite 1 ファイルで動き、root 不要・上位ポートで待受できます。
 
-### サーバーモード（最小構成）
+### サーバーモード backend（最小構成）
 
 Python 1 プロセス + SQLite 1 ファイルで動作します（root 不要・上位ポートで待受）。Python 3.11+ が前提です。
 
@@ -50,6 +50,52 @@ python manage.py migrate          # 未設定時は db.sqlite3（SQLite 単一�
 DEBUG=true python manage.py runserver 8000
 ```
 
+`migrate` で SQLite の単一ファイル（`backend/db.sqlite3`）が作成され、`runserver 8000` で `http://localhost:8000/api/` が待受します。
+
+### フロントエンド（frontend）
+
+Node.js 20 系 + npm を前提とします（開発確認は node v20 / npm 10 で実施）。
+
+```bash
+cd frontend
+npm install          # 依存をインストール
+npm run dev          # 開発サーバー（vite 既定 http://localhost:5173）
+npm run build        # 本番ビルド（tsc -b && vite build → frontend/dist/ を生成）
+npm run test:run     # テスト実行（vitest・一回実行）
+npm run lint         # 静的検査（eslint）
+```
+
+`npm run dev` の開発サーバーは vite 既定で `http://localhost:5173` を待受します。`/api` へのリクエストは vite の **開発プロキシ**で backend（`http://localhost:8000`）へ転送されるため、開発中は CORS 設定を触らずに動きます（`frontend/vite.config.ts` の `server.proxy`）。このプロキシは開発サーバー専用で、`vite build` の本番成果物には影響しません。
+
+### backend + frontend の 2 プロセス開発フロー
+
+開発時はターミナルを 2 つ使い、backend と frontend を並行起動します。
+
+```bash
+# ターミナル 1: backend（API）
+cd backend
+DEBUG=true python manage.py runserver 8000
+
+# ターミナル 2: frontend（UI）
+cd frontend
+npm run dev
+```
+
+ブラウザで `http://localhost:5173` を開くと UI が表示され、UI からの `/api` 呼び出しは vite プロキシ経由で `http://localhost:8000` の backend に届きます。
+
+本番配信では frontend を `npm run build` した静的成果物（`frontend/dist/`）を任意の Web サーバーで配信し、別ホスト/ポートの backend を叩く構成が前提です。この場合は vite プロキシが無いため、backend 側で `JANUS_CORS_ALLOWED_ORIGINS` に配信元オリジンを設定して CORS を許可してください。
+
+### 認証の使い方（最小）
+
+API は既定で認証必須（`JANUS_REQUIRE_AUTH=true`）です。まず管理者ユーザーを作成します。
+
+```bash
+cd backend
+../.venv/bin/python manage.py createsuperuser
+```
+
+認証方式は **トークン認証**です。`POST /api/auth/login` に `username` / `password` を送るとトークンが返り、以降のリクエストでは HTTP ヘッダ `Authorization: Token <トークン>` を付与します。フロントエンドの認証 UI も同じ契約でログイン・トークン保持を行います。
+
 ### 環境変数
 
 `backend/.env.example` が設定項目のサンプルです。現状は `.env` の自動読込は行わないため、必要な変数は実行環境で `export` するか、コマンド前に付与してください（上記の `DEBUG=true` のように）。主な変数:
@@ -60,7 +106,7 @@ DEBUG=true python manage.py runserver 8000
 | `DEBUG` | `false` | デバッグモード。開発時のみ `true` |
 | `ALLOWED_HOSTS` | 空（DEBUG 時は localhost） | 許可ホスト（カンマ区切り） |
 | `DATABASE_URL` | SQLite（`backend/db.sqlite3`） | DB 接続 URL。PostgreSQL 利用時は別途 `psycopg` の導入が必要 |
-| `JANUS_REQUIRE_AUTH` | `true` | 全 API を認証必須にする意図フラグ（権限反映は認証実装タスクで） |
+| `JANUS_REQUIRE_AUTH` | `true` | 既定の API 権限を切替える。`true` で認証必須（`IsAuthenticated`）、`false` で誰でも可（`AllowAny`） |
 | `JANUS_MEDIA_ROOT` | `backend/media/` | アセット保存先 |
 | `JANUS_CORS_ALLOWED_ORIGINS` | 空（許可なし） | CORS 許可オリジン（カンマ区切り） |
 
