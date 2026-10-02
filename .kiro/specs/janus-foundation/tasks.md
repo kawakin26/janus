@@ -64,11 +64,11 @@
   - ログイン画面（username/password → login）、ログアウト、`currentUser` によるルートガード（未認証は `/login` へ）を実装
   - _要件: 4-1, 4-2_
 
-- [ ] 10. ページ閲覧・編集 UI（Markdown）
-  - [ ] 10.1 Markdown レンダラ
+- [x] 10. ページ閲覧・編集 UI（Markdown）
+  - [x] 10.1 Markdown レンダラ
     - remark/rehype + remark-directive でフロント描画。閲覧画面で本文をレンダリング
     - _要件: 2-3_
-  - [ ] 10.2 作成・編集・削除 UI
+  - [x] 10.2 作成・編集・削除 UI
     - 新規作成（パス入力・重複は 409 を通知）、編集保存、削除を StorageClient 経由で実装。一覧/階層ナビから遷移
     - _要件: 2-1, 2-2, 2-4, 2-6, 2-7_
 

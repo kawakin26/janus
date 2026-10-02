@@ -18,11 +18,18 @@ export interface StubStorageOverrides {
   login?: StorageClient['login']
   logout?: StorageClient['logout']
   currentUser?: StorageClient['currentUser']
+  // ページ系メソッド（タスク 10 の画面テスト用）。未指定なら呼ばれると throw する既定を保つ。
+  getPage?: StorageClient['getPage']
+  listChildren?: StorageClient['listChildren']
+  createPage?: StorageClient['createPage']
+  updatePage?: StorageClient['updatePage']
+  deletePage?: StorageClient['deletePage']
 }
 
 /**
- * 認証メソッドだけ差し替えられる StorageClient スタブを作る。
- * 未指定の認証メソッドは安全な既定（未認証）を返す。認証以外のメソッドは呼ばれたら throw。
+ * 認証メソッドとページ系メソッドを差し替えられる StorageClient スタブを作る。
+ * 未指定の認証メソッドは安全な既定（未認証）を返す。
+ * 未指定のページ系メソッドおよびアセット/検索メソッドは呼ばれたら throw する（後方互換）。
  */
 export function createStubStorage(overrides: StubStorageOverrides = {}): StorageClient {
   const notImplemented = (name: string) => () => {
@@ -33,11 +40,11 @@ export function createStubStorage(overrides: StubStorageOverrides = {}): Storage
     login: overrides.login ?? vi.fn(async () => ({ token: 't', user: sampleUser })),
     logout: overrides.logout ?? vi.fn(async () => {}),
     currentUser: overrides.currentUser ?? vi.fn(async () => null),
-    getPage: notImplemented('getPage'),
-    listChildren: notImplemented('listChildren'),
-    createPage: notImplemented('createPage'),
-    updatePage: notImplemented('updatePage'),
-    deletePage: notImplemented('deletePage'),
+    getPage: overrides.getPage ?? notImplemented('getPage'),
+    listChildren: overrides.listChildren ?? notImplemented('listChildren'),
+    createPage: overrides.createPage ?? notImplemented('createPage'),
+    updatePage: overrides.updatePage ?? notImplemented('updatePage'),
+    deletePage: overrides.deletePage ?? notImplemented('deletePage'),
     listAssets: notImplemented('listAssets'),
     uploadAsset: notImplemented('uploadAsset'),
     resolveAssetUrl: notImplemented('resolveAssetUrl'),
