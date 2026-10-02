@@ -24,12 +24,16 @@ export interface StubStorageOverrides {
   createPage?: StorageClient['createPage']
   updatePage?: StorageClient['updatePage']
   deletePage?: StorageClient['deletePage']
+  // アセット系メソッド（タスク 11 の地図ビューアテスト用）。未指定なら throw する既定を保つ。
+  listAssets?: StorageClient['listAssets']
+  uploadAsset?: StorageClient['uploadAsset']
+  resolveAssetUrl?: StorageClient['resolveAssetUrl']
 }
 
 /**
  * 認証メソッドとページ系メソッドを差し替えられる StorageClient スタブを作る。
  * 未指定の認証メソッドは安全な既定（未認証）を返す。
- * 未指定のページ系メソッドおよびアセット/検索メソッドは呼ばれたら throw する（後方互換）。
+ * 未指定のページ系・アセット系メソッドおよび検索メソッドは呼ばれたら throw する（後方互換）。
  */
 export function createStubStorage(overrides: StubStorageOverrides = {}): StorageClient {
   const notImplemented = (name: string) => () => {
@@ -45,9 +49,9 @@ export function createStubStorage(overrides: StubStorageOverrides = {}): Storage
     createPage: overrides.createPage ?? notImplemented('createPage'),
     updatePage: overrides.updatePage ?? notImplemented('updatePage'),
     deletePage: overrides.deletePage ?? notImplemented('deletePage'),
-    listAssets: notImplemented('listAssets'),
-    uploadAsset: notImplemented('uploadAsset'),
-    resolveAssetUrl: notImplemented('resolveAssetUrl'),
+    listAssets: overrides.listAssets ?? notImplemented('listAssets'),
+    uploadAsset: overrides.uploadAsset ?? notImplemented('uploadAsset'),
+    resolveAssetUrl: overrides.resolveAssetUrl ?? notImplemented('resolveAssetUrl'),
     search: notImplemented('search'),
   }
 }

@@ -6,6 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import MarkdownRenderer from './MarkdownRenderer'
+import { StorageProvider } from '../storage/StorageProvider'
+import { createStubStorage } from '../test/stub-storage'
 
 describe('MarkdownRenderer', () => {
   it('見出し・段落・リストを描画する', () => {
@@ -26,10 +28,21 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByRole('cell', { name: 'foo' })).toBeInTheDocument()
   })
 
-  it('未対応ディレクティブ custom-map をクラッシュせずプレースホルダ化する', () => {
-    const body = ':::custom-map{src="map.drawio"}\n本文\n:::'
+  it('custom-map を地図ビューア（「マップを開く」ボタン）として描画する', () => {
+    const body = ':::custom-map{file="map.png" src="/map-library"}\n\n- x=10 y=20 label="A"\n:::'
+    render(
+      <StorageProvider client={createStubStorage({ resolveAssetUrl: async () => null })}>
+        <MarkdownRenderer body={body} currentPagePath="/pages/here" />
+      </StorageProvider>,
+    )
+    // custom-map は fallback のプレースホルダではなく専用ビューアに差し替わる。
+    expect(screen.getByRole('button', { name: 'マップを開く' })).toBeInTheDocument()
+  })
+
+  it('custom-map 以外の未対応ディレクティブはプレースホルダ化する（fallback 不変）', () => {
+    const body = ':::unknown-directive{foo="bar"}\n本文\n:::'
     const { container } = render(<MarkdownRenderer body={body} />)
-    const placeholder = container.querySelector('[data-directive="custom-map"]')
+    const placeholder = container.querySelector('[data-directive="unknown-directive"]')
     expect(placeholder).not.toBeNull()
     expect(placeholder).toHaveTextContent('本文')
   })
