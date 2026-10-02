@@ -16,7 +16,7 @@
     - `DATABASE_URL` で SQLite（既定）/ PostgreSQL を切替。`JANUS_REQUIRE_AUTH`（既定 true）、`JANUS_MEDIA_ROOT`、CORS 許可オリジンを環境変数化
     - _要件: 12-2, 12-4, 13-1_
 
-- [ ] 3. データモデルとマイグレーション
+- [x] 3. データモデルとマイグレーション
   - `api/models.py` に `Page`（path 一意・index、title、body、created/updated、created_by/updated_by）と `Attachment`（page FK、original_name index、file、content_type、created_at）を定義
   - マイグレーション作成・適用。管理サイト登録（開発確認用）
   - _要件: 2-1, 2-5, 2-7, 4-5_
