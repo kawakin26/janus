@@ -31,12 +31,12 @@
     - APITestCase で「未認証は 401」「ログイン後に通る」を検証
     - _要件: 4-2, 4-4_
 
-- [ ] 5. ページ CRUD と階層ナビの API
-  - [ ] 5.1 ページの取得・作成・更新・削除
+- [x] 5. ページ CRUD と階層ナビの API
+  - [x] 5.1 ページの取得・作成・更新・削除
     - `GET /api/pages?path=`、`POST /api/pages`（重複パスは 409）、`PUT /api/pages?path=`、`DELETE /api/pages?path=` を実装。保存時に `updated_by` を記録
     - path は末尾スラッシュ正規化して一意性を担保
     - _要件: 2-1, 2-2, 2-4, 2-7, 4-5_
-  - [ ] 5.2 子ページ一覧（階層ナビ）
+  - [x] 5.2 子ページ一覧（階層ナビ）
     - `GET /api/pages/children?parent=` を実装。親直下のみに絞り込む（既存 listChildPages のフィルタ思想）
     - APITestCase で CRUD と重複拒否・子一覧を検証
     - _要件: 2-6_
