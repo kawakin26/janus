@@ -69,6 +69,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # サードパーティ
     "rest_framework",
+    # DRF の TokenAuthentication 用。authtoken_token テーブルの
+    # マイグレーションを同梱するため migrate が必要（makemigrations は不要）。
+    "rest_framework.authtoken",
     "corsheaders",
     # Janus 本体
     "api",
@@ -177,6 +180,44 @@ CORS_ALLOWED_ORIGINS = env_list("JANUS_CORS_ALLOWED_ORIGINS")
 # 既定権限への反映は認証実装（タスク 4）で行う。
 # ---------------------------------------------------------------------------
 JANUS_REQUIRE_AUTH = env_bool("JANUS_REQUIRE_AUTH", True)
+
+
+# ---------------------------------------------------------------------------
+# Django REST Framework（design.md 5 章「認証方式（要件4）とセキュリティ移行方針」）
+#
+# 認証方式: フェーズ 1 は DRF の TokenAuthentication 一本とする。
+#   ログインで token を発行し、以降 `Authorization: Token <...>` ヘッダで送る。
+#   将来の Cookie セッション + CSRF への移行は、認証ロジックを AuthClient 契約
+#   （エンドポイント）の裏に閉じ込めることで吸収する想定。
+#
+# SessionAuthentication は「あえて追加しない」。理由:
+#   - design が「Cookie セッションより CORS が単純」として Token を初期採用と明言。
+#   - フロントは未実装（タスク 7 以降）で、CSRF を伴う Cookie フローのテスト相手が無い。
+#   - SessionAuthentication を足すと Django admin のブラウザセッションで API の
+#     認証判定が変わり、テストが複雑化する。admin は Django 標準のセッション
+#     ログイン（DRF 非経由）を使うため、ここに入れなくても影響しない。
+#
+# 既定権限: JANUS_REQUIRE_AUTH が True なら全 API を認証必須（IsAuthenticated）、
+#   False なら AllowAny（公開）に切り替える（要件 4-2）。login と me は
+#   ビュー側で permission_classes=[AllowAny] を明示して例外化する。
+# ---------------------------------------------------------------------------
+def default_permission_classes(require_auth: bool) -> list[str]:
+    """既定権限クラスを JANUS_REQUIRE_AUTH の値から決める。
+
+    True なら認証必須（IsAuthenticated）、False なら公開（AllowAny）。
+    テストから分岐ロジックそのものを検証できるよう関数に切り出している。
+    """
+    if require_auth:
+        return ["rest_framework.permissions.IsAuthenticated"]
+    return ["rest_framework.permissions.AllowAny"]
+
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": default_permission_classes(JANUS_REQUIRE_AUTH),
+}
 
 
 # ---------------------------------------------------------------------------
