@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -15,5 +16,12 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  // Vitest 設定（別ファイルを作らず vite.config.ts に同居させる）。
+  // RestClient のユニットテストは fetch をモックするため DOM 不要＝node 環境で動かす。
+  // FormData/File/Blob は Node 20 のグローバルに存在するためポリフィル不要。
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
 })

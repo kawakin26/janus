@@ -51,11 +51,11 @@
   - `frontend/` に Vite + React + TypeScript を初期化。React Router を導入し、`/`（一覧）・`/view/*`（閲覧）・`/edit/*`（編集）・`/login` のルートを用意
   - _要件: 2-6_
 
-- [ ] 8. StorageClient 契約と RestClient 実装
-  - [ ] 8.1 契約（インターフェース）定義
+- [x] 8. StorageClient 契約と RestClient 実装
+  - [x] 8.1 契約（インターフェース）定義
     - `frontend/src/storage/types.ts` に `AuthClient`/`PageClient`/`AssetClient`/`SearchClient`/`StorageClient` と関連型を定義。`SearchClient` は契約のみ（実装はフェーズ 4）
     - _要件: 1-1, 1-4, 11-4_
-  - [ ] 8.2 RestClient 実装
+  - [x] 8.2 RestClient 実装
     - `frontend/src/storage/rest-client.ts` に fetch ベースで契約を実装。トークンの保持・付与、API エラーを例外へ変換、401 の扱いを実装
     - fetch をモックしたユニットテストで契約充足を検証
     - _要件: 1-2, 9（DRF 連携）_
