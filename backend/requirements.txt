@@ -1,0 +1,12 @@
+# Janus バックエンド依存（フェーズ 1）
+# 実際にインストールして動作確認した具体バージョンに固定（範囲指定はしない）。
+# Python 3.11+ 前提。
+
+Django==5.2.17
+djangorestframework==3.18.1
+django-cors-headers==4.9.0
+dj-database-url==3.1.2
+
+# 推移依存（上記が要求するもの。再現性のため明示的に固定）
+asgiref==3.12.1
+sqlparse==0.6.0
