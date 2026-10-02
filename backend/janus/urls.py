@@ -14,6 +14,8 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
@@ -22,3 +24,10 @@ urlpatterns = [
     # /api/ 配下は api アプリに委譲する（認証エンドポイント等）。
     path('api/', include('api.urls')),
 ]
+
+# DEBUG 時のみ MEDIA_URL 直下を素の静的配信する（開発補助）。
+# これは listAssets が返す file の URL（/media/...）をブラウザで直接確認するための
+# もので権限制御は無い。権限制御付きの実体配信は /api/assets/<id>（AssetDetailView）
+# が別口で担い、本番のメディア配信は Web サーバー（nginx 等）に委ねる。役割は別。
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

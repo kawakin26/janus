@@ -10,16 +10,25 @@ API ビュー。
 Cookie セッション + CSRF への移行をフロント非改修で行えるようにする。
 """
 
+import os
+
 from django.db import IntegrityError
+from django.http import FileResponse
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Page
-from .serializers import PageSerializer, PageSummarySerializer, UserSerializer
+from .models import Attachment, Page
+from .serializers import (
+    AssetSerializer,
+    PageSerializer,
+    PageSummarySerializer,
+    UserSerializer,
+)
 from .utils import normalize_path
 
 
@@ -218,3 +227,118 @@ class PageChildrenView(APIView):
 
         serializer = PageSummarySerializer(children, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ---------------------------------------------------------------------------
+# アセット（添付）API（design.md 4 章 AssetClient 契約 / 5 章 REST エンドポイント表）
+#
+# 設計判断: original_name 照合による URL 解決（resolveAssetUrl）はクライアント側に
+# 置く。サーバーは「ページごとのアセット一覧（original_name と URL を含む）」を返す
+# listAssets、アップロード uploadAsset、実体配信に徹し、解決専用エンドポイントは
+# 作らない（design 4/5/7 章に接地）。
+#
+# 権限方針（ページ API と同一）:
+#   - 一覧 GET / 実体配信 GET は JANUS_REQUIRE_AUTH 由来の既定権限に委ねる
+#     （AllowAny に上書きしない）。
+#   - アップロード POST は書き込み系のため既定（IsAuthenticated）のまま
+#     （permission_classes を上書きしない）。
+# ---------------------------------------------------------------------------
+
+# 対象アセットが存在しないときの 404 用メッセージ。
+ASSET_NOT_FOUND_DETAIL = "指定されたアセットが見つかりません。"
+# アップロード時にファイル(file)が未指定・不正なときの 400 用メッセージ。
+ASSET_FILE_REQUIRED_DETAIL = "ファイル(file)が指定されていません。"
+
+
+class PageAssetsView(APIView):
+    """GET/POST /api/pages/assets?path=: ページのアセット一覧取得・アップロード。
+
+    design 5 章 listAssets / uploadAsset に対応する。?path= で対象ページを指定し
+    （normalize_path で正規化）、無ければ 404（PAGE_NOT_FOUND_DETAIL）。
+    """
+
+    # アップロード（POST）は multipart/form-data を受けるためパーサを設定する。
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request, *args, **kwargs):
+        # ?path= を正規化してページ取得。無ければ 404。GET は既定権限に委ねる。
+        path = normalize_path(request.query_params.get("path"))
+        page = Page.objects.filter(path=path).first()
+        if page is None:
+            return Response(
+                {"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND
+            )
+        # 絶対 URL 解決のため context に request を渡す（AssetSerializer.get_url）。
+        assets = page.attachments.all().order_by("created_at")
+        serializer = AssetSerializer(assets, many=True, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        # ?path= を正規化してページ取得。無ければ 404。認証は既定(IsAuthenticated)のまま。
+        path = normalize_path(request.query_params.get("path"))
+        page = Page.objects.filter(path=path).first()
+        if page is None:
+            return Response(
+                {"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # ファイルフィールド名は "file"。未指定なら 400。
+        uploaded = request.FILES.get("file")
+        if uploaded is None:
+            return Response(
+                {"detail": ASSET_FILE_REQUIRED_DETAIL},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # original_name はアップロード名の「ファイル名部分のみ」を保存する。
+        # os.path.basename で "../" や絶対パス・ディレクトリ区切りを弾き、
+        # トラバーサルを無効化する。さらに制御文字（ヌルバイト含む）を除去して
+        # 表示・照合用の名前を安全にする。max_length=255 に合わせて切り詰める。
+        base_name = os.path.basename(uploaded.name or "")
+        # 制御文字（C0: 0x00-0x1f, DEL: 0x7f）を除去する。ファイル名に
+        # 現れるべきでない文字で、ヌルバイト注入や表示崩れを防ぐ。
+        original_name = "".join(
+            ch for ch in base_name if ch >= " " and ch != "\x7f"
+        )[:255]
+        if not original_name:
+            # basename が空になる異常なファイル名は 400 で弾く。
+            return Response(
+                {"detail": ASSET_FILE_REQUIRED_DETAIL},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # content_type はあれば使い、無ければ空文字。
+        content_type = getattr(uploaded, "content_type", "") or ""
+
+        # 保存ファイル名自体は Django の FileField/Storage（upload_to +
+        # get_available_name）に委ね、アプリ側で保存パスは組み立てない。
+        attachment = Attachment.objects.create(
+            page=page,
+            original_name=original_name,
+            file=uploaded,
+            content_type=content_type,
+        )
+        # 絶対 URL 解決のため context に request を渡す。
+        serializer = AssetSerializer(attachment, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class AssetDetailView(APIView):
+    """GET /api/assets/<id>: アセット実体を配信する（design 5 章）。
+
+    FileResponse でストレージから直接ストリーム配信する。MEDIA_URL の素の静的
+    配信とは別口で、DRF の既定権限（JANUS_REQUIRE_AUTH 由来）による権限制御付き
+    配信を提供する（権限はビューで上書きしない）。存在しなければ 404。
+    """
+
+    def get(self, request, pk, *args, **kwargs):
+        attachment = Attachment.objects.filter(pk=pk).first()
+        if attachment is None or not attachment.file:
+            return Response(
+                {"detail": ASSET_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND
+            )
+        # content_type は保存値を使い、無ければ汎用のバイナリ型にフォールバック。
+        return FileResponse(
+            attachment.file.open("rb"),
+            content_type=attachment.content_type or "application/octet-stream",
+        )

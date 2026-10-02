@@ -8,7 +8,7 @@ UserSerializer は login と me の両エンドポイントで共通利用し、
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import Page
+from .models import Attachment, Page
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -70,3 +70,31 @@ class PageSummarySerializer(serializers.ModelSerializer):
         model = Page
         fields = ["path", "title"]
         read_only_fields = fields
+
+
+class AssetSerializer(serializers.ModelSerializer):
+    """アセット（添付）の表現（design.md 5 章 listAssets / uploadAsset のレスポンス）。
+
+    original_name による URL 解決はクライアント側（resolveAssetUrl）が担うため、
+    本シリアライザは解決に必要な素の情報（original_name と file の URL）を返すに
+    とどめる。url は SerializerMethodField で、context["request"] があれば絶対 URL
+    （build_absolute_uri）に、無ければルート相対（obj.file.url）にフォールバックする。
+    全フィールド読み取り専用（この契約は更新用途を持たない）。
+    """
+
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Attachment
+        fields = ["id", "original_name", "url", "content_type", "created_at"]
+        read_only_fields = fields
+
+    def get_url(self, obj):
+        # file 未設定の異常時は空文字を返す（通常は upload 時に必ず設定される）。
+        if not obj.file:
+            return ""
+        # request 文脈があれば絶対 URL に解決。無ければルート相対 URL にフォールバック。
+        request = self.context.get("request")
+        if request is not None:
+            return request.build_absolute_uri(obj.file.url)
+        return obj.file.url

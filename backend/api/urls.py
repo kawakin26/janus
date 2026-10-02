@@ -18,5 +18,9 @@ urlpatterns = [
     # pages/children を pages より前に置き、ルーティングの意図を明確にする
     # （どちらも完全一致パスだが、より具体的な children を先に記述）。
     path("pages/children", views.PageChildrenView.as_view(), name="pages-children"),
+    # pages/assets も具体パスのため pages より前に置く（children と同じ意図）。
+    path("pages/assets", views.PageAssetsView.as_view(), name="pages-assets"),
     path("pages", views.PageDetailView.as_view(), name="pages"),
+    # アセット実体配信（権限制御付き）。/media/ の素の静的配信とは別口。
+    path("assets/<int:pk>", views.AssetDetailView.as_view(), name="assets-detail"),
 ]

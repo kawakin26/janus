@@ -41,7 +41,7 @@
     - APITestCase で CRUD と重複拒否・子一覧を検証
     - _要件: 2-6_
 
-- [ ] 6. アセット（添付）の API と解決
+- [x] 6. アセット（添付）の API と解決
   - `GET /api/pages/assets?path=`（一覧）、`POST /api/pages/assets?path=`（multipart アップロード）、`GET /api/assets/<id>`（実体配信）を実装
   - original_name 照合によるアセット URL 解決（候補ページ順のフォールバック）をサーバー側 or クライアント側のどちらで行うか確定し実装（design 7 章の方針）
   - APITestCase でアップロード→一覧→解決を検証
