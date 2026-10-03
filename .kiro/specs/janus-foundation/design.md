@@ -97,18 +97,55 @@ Janus は「1 つのフロントエンド」と「差し替え可能なバック
 
 > フェーズ 2 で `Revision`（body のスナップショット列）を追加する。フェーズ 1 では `Page.body` が常に最新。`Revision` 追加時は「保存のたびに Revision を作り、Page.body は最新のキャッシュ」とする拡張を想定し、`body` を残す設計にしておく。
 
-### Attachment（アセット）
+### アセットライブラリ: Folder と Asset（独立リソース・階層管理）〔要件 14〕
+
+アセットはページから独立した共有リソースとし、階層フォルダで整理する（要件 14-1,2）。
+GROWI 時代の「Page に紐づく Attachment」および map_library/media_library（仮置き場）は廃止する。
+フェーズ 1 の既存 `Attachment` モデルは削除し、以下の `Folder` / `Asset` に置き換える（過去データ移行は不要）。
+
+#### Folder（階層ノード）
 
 | フィールド | 型 | 説明 |
 |-----------|-----|------|
 | id | PK | 内部 ID |
-| page | FK(Page) | 添付先ページ |
-| original_name | CharField(index) | アップロード時のファイル名（記法の `file=` / `photo=` 照合に使う。既存仕様踏襲） |
-| file | FileField | 実体（MEDIA 配下。保存先は設定で差し替え可能） |
-| content_type | CharField | MIME |
-| created_at | DateTimeField | 作成日時 |
+| parent | FK(self, null許容) | 親フォルダ。null はルート直下 |
+| name | CharField | フォルダ名（表示名）。同一 parent 配下で一意 |
+| created_at / updated_at | DateTimeField | 日時 |
 
-> 既存プラグインが `originalName` で照合して URL 解決していた仕様（common.ts の `resolveAttachmentUrl`）を、Janus では「Page に紐づく Attachment を original_name で引く」に置き換える（7 章）。
+- 一意制約: `(parent, name)` ユニーク（同じ親の下に同名フォルダを作れない）。
+- 木構造は parent FK で表現し、ツリーの移動・付け替えを容易にする（物理配置と分離）。
+
+#### Asset（アセット本体）
+
+| フィールド | 型 | 説明 |
+|-----------|-----|------|
+| id | PK | 内部 ID |
+| folder | FK(Folder, null許容) | 所属フォルダ。null はルート直下 |
+| filename | CharField(index) | ファイル名。記法 `file:`/`filename:` の照合に使う |
+| alias | CharField(index, blank) | 別名（登録名）。記法 `alias:`/`aliasname:` の照合に使う。省略可 |
+| file | FileField | 実体（MEDIA 配下にフラット保存。保存名は衝突回避のため Storage に委ねる） |
+| content_type | CharField | MIME |
+| created_at / updated_at | DateTimeField | 日時 |
+
+- 一意制約: `(folder, filename)` ユニーク、かつ `(folder, alias)` ユニーク（alias が空でない場合）。＝**フォルダ内一意**（要件 14-4）。異なるフォルダなら同名可（`本館/2F/map.png` と `別館/2F/map.png`）。
+- 移動（folder 変更）時に移動先で filename/alias が重複するなら**移動を禁止**しエラーを返す（要件 14-5）。
+- 物理ファイルはフラット保存し、論理階層は folder FK が持つ（要件 14-2）。
+
+#### 物理保存の方針（設計判断の記録）
+
+「物理ファイルの配置を論理階層に一致させる案（案 X）」と「DB で階層化し物理はフラット保存する案（案 Y）」を比較し、**案 Y を採用する**。理由:
+
+- **移動が軽い・原子的**: フォルダ/アセットの移動が FK の付け替え 1 回で済む（物理 I/O 無し・トランザクションで原子的）。案 X は配下ファイルの物理移動が必要で、大量ファイル時のコストと途中失敗時の整合性問題がある（要件 14-5 の移動を安全に実現）。
+- **2 モード一本化**: ローカルモード（IndexedDB、フェーズ 3）には物理ディレクトリの概念が無い。DB 階層なら「folder レコード + asset レコード + Blob」として同じ論理モデルを両モードで共有でき、`resolveAssetUrl` の解決アルゴリズムも共通化できる（要件 1・要件 14-7）。
+- **名前制約の独立**: 日本語フォルダ名・一意制約・大小文字の扱いを OS/ファイルシステムの都合から切り離し、アプリ（DB）が完全に制御できる。
+
+採用に伴う一貫性ルール（**物理パスは論理階層を表現しない**）:
+
+- `Asset.file` の物理保存名は**不透明な ID**（UUID / ハッシュ等）とし、人が物理パスから階層・名前を読み取ることは想定しない。これにより「物理パスと論理階層の齟齬」は定義上発生しない（物理パスは最初から階層を主張しない）。登録後にフォルダ移動しても物理ファイルは一切動かさない。
+- **論理階層（folder 木）が唯一の正（source of truth）**。利用者が構造を見る/取り出す経路は常に DB 経由（UI・API・エクスポート）。
+- **エクスポート（将来）は物理をコピーするのではなく、DB の論理階層を辿って構造を再構築する**（例: 各 asset について folder 木から `本館/2F/map.png` を組み立て、その論理パスで実体を zip へ書き出す）。したがってエクスポート成果物は常に実態（DB の論理階層）を正確に反映する。物理フラット保存はエクスポート結果に影響しない。
+
+> 名前解決（記法 → アセット）の流れは 7 章参照。DB 上は「フォルダパス → folder_id → `(folder_id, filename|alias)` 一意検索」で一意に定まる（要件 14-12）。
 
 ### フェーズ 2 以降で追加予定（本設計では未実装・参考）
 
@@ -140,12 +177,27 @@ interface PageClient {
   deletePage(path: string): Promise<void>;
 }
 
-// アセット操作（地図画像・写真の解決に使う）
+// アセットライブラリ操作（独立リソース・階層管理・参照解決）〔要件 14〕
 interface AssetClient {
-  listAssets(pagePath: string): Promise<Asset[]>;
-  uploadAsset(pagePath: string, file: File): Promise<Asset>;
-  // 記法の file=/photo= を URL に解決する（既存 resolveAttachmentUrl 相当）
-  resolveAssetUrl(originalName: string, candidatePagePaths: string[]): Promise<string | null>;
+  // フォルダ階層
+  listFolders(parentFolderId: number | null): Promise<Folder[]>;      // 直下のサブフォルダ
+  createFolder(input: { parentId: number | null; name: string }): Promise<Folder>; // (parent,name) 一意
+  // アセット
+  listAssets(folderId: number | null): Promise<Asset[]>;              // 指定フォルダ直下のアセット
+  uploadAsset(input: { folderId: number | null; file: File; alias?: string }): Promise<Asset>; // 画像はそのまま/CADはSVG変換(フェーズ3)
+  moveAsset(assetId: number, toFolderId: number | null): Promise<Asset>; // 移動先重複なら拒否(要件14-5)
+  // 記法 file:/alias: + 基準フォルダ から URL を解決する（7 章の解決規則に従う）
+  resolveAssetUrl(ref: AssetRef): Promise<string | null>;
+}
+
+// 地図記法の参照指定（7 章）。基準フォルダと、filename/alias の指定（出現順を保持）を表す。
+interface AssetRef {
+  baseFolderPath?: string;                 // 基準フォルダ（コンテナ属性）。未指定はルート
+  specifiers: Array<                       // 出現順。先頭優先で解決、失敗で次へ（要件 14-11）
+    { kind: 'filename'; value: string } |  // file: / filename:
+    { kind: 'alias'; value: string }       // alias: / aliasname:
+  >;
+  // value にスラッシュを含む場合はフォルダを上書き解決する（要件 14-10）
 }
 
 // 検索（フェーズ 4 で実装。契約だけ先に置く＝要件 1-4, 11-4）
@@ -174,9 +226,14 @@ interface StorageClient extends AuthClient, PageClient, AssetClient, SearchClien
 | POST | `/api/pages` | createPage | 要 | 重複パスは 409 |
 | PUT | `/api/pages?path=` | updatePage | 要 | 本文更新 |
 | DELETE | `/api/pages?path=` | deletePage | 要 | |
-| GET | `/api/pages/assets?path=` | listAssets | 設定次第 | ページの添付一覧 |
-| POST | `/api/pages/assets?path=` | uploadAsset | 要 | multipart |
-| GET | `/api/assets/<id>` | （配信） | 設定次第 | 実体配信 |
+| GET | `/api/folders?parent=<id\|空>` | listFolders | 設定次第 | 指定フォルダ直下のサブフォルダ一覧（parent 省略＝ルート直下） |
+| POST | `/api/folders` | createFolder | 要 | body `{parentId, name}`。同一親で同名は 409 |
+| GET | `/api/assets?folder=<id\|空>` | listAssets | 設定次第 | 指定フォルダ直下のアセット一覧 |
+| POST | `/api/assets?folder=<id\|空>` | uploadAsset | 要 | multipart（file、任意 alias）。同一フォルダ内で filename/alias 重複は 409 |
+| PATCH | `/api/assets/<id>` | moveAsset | 要 | body `{folderId}`。移動先で名前重複なら 409（要件 14-5） |
+| GET | `/api/assets/<id>/file` | （配信） | 設定次第 | 実体配信（FileResponse。権限制御付き） |
+
+> **アセットは独立リソース**（ページ従属ではない）になったため、旧 `/api/pages/assets?path=` は廃止し、`/api/folders` と `/api/assets` 系へ移行する（要件 14）。解決（`resolveAssetUrl`）はクライアント側で `listFolders`/`listAssets` を使って行う方針とし、専用の解決エンドポイントは置かない（下記「アセット参照の解決」参照）。
 
 ### 認証方式（要件 4）とセキュリティ移行方針
 
@@ -196,9 +253,18 @@ interface StorageClient extends AuthClient, PageClient, AssetClient, SearchClien
 
 > 要点: フェーズ 1 のトークン認証は「捨てやすい初期実装」として位置づけ、`AuthClient` 契約を安定させることで、堅牢な方式への移行コストをフロント非改修に抑える。
 
-### フォールバック解決（既存仕様の踏襲）
+### アセット参照の解決（独立アセットライブラリ・要件 14-9〜12）
 
-- `resolveAssetUrl` は、候補ページ（記法ページ → ストック相当ページ）の順に `listAssets` を見て `original_name` 一致を探す。既存 common.ts の多段フォールバックの思想を踏襲するが、**GROWI の `/_api/v3/...` 依存は除去**し、Janus の `/api/pages/assets` に一本化する。
+GROWI 時代の「候補ページ（記法ページ → ストック相当ページ）を順に探す」多段フォールバックは、アセットがページ従属だった制約の産物であり、Janus では廃止する。独立アセットライブラリでは「基準フォルダ + filename/alias」で解決する。
+
+- **解決の入力**: `AssetRef`（4 章）= 基準フォルダ `baseFolderPath`（コンテナ属性）＋ 出現順の指定子 `specifiers`（`filename`/`alias`）。
+- **解決手順**（要件 14-12）:
+  1. 指定子を**出現順**に試す（要件 14-11: 先頭優先、失敗で次へ）。
+  2. 各指定子について、`value` にスラッシュがあればそのフォルダ（基準フォルダからの相対または絶対）を、無ければ基準フォルダを対象フォルダとする（要件 14-10）。
+  3. フォルダパスを木構造の `folder_id` に解決し、`(folder_id, filename)` または `(folder_id, alias)` の**フォルダ内一意**検索で 1 件に定める。
+  4. いずれの指定子でも見つからなければ null（表示は「見つかりません」。要件 9）。
+- **GROWI 依存の除去**: `/_api/v3/...` 依存は無い。Janus の `/api/folders`・`/api/assets` 系に一本化する。
+- **解決ロジックの置き場**: クライアント側（`RestClient` が `listFolders`/`listAssets` を使って解決）とする。サーバーは素直な一覧 API のままとし、専用の `resolve` エンドポイントは置かない。`AssetClient.resolveAssetUrl(ref)` 契約の裏に閉じ込めることで、ローカルモード（IndexedDB、フェーズ 3）でも同契約を満たせるようにする。
 
 ---
 
@@ -211,29 +277,40 @@ interface StorageClient extends AuthClient, PageClient, AssetClient, SearchClien
 
 ---
 
-## 7. 既存プラグイン（地図）の移植方針（要件 3）
+## 7. 既存プラグイン（地図）の移植方針（要件 3, 14）
 
-既存 `src/viewer.ts` / `src/common.ts` の地図ロジックを Janus フロントへ移植する。GROWI 固有依存を 2 点に切り分ける。
+既存 `src/viewer.ts` / `src/common.ts` の地図ロジックを Janus フロントへ移植する。GROWI 固有依存に加え、**アセット参照の記法もページ従属から独立アセットライブラリ方式に変更する**（要件 14。「過去の記法互換は要求しない」とユーザー合意済み）。
 
-### そのまま流用できる（GROWI 非依存）
+### そのまま流用できる（GROWI 非依存・記法変更の影響なし）
 
-- 記法パース（`:::custom-map{...}` とマーカー箇条書きの属性解釈）。
 - モーダル描画・パン/ズーム/90 度回転・マーカー最小化/復帰・写真/説明ポップアップ。
 - ラベル文字色の自動選択（`textColorForBg`）、ピン径/ラベルサイズのクランプ、`normalizeForSearch` 等のユーティリティ。
-- 記法の仕様（コンテナ属性 `file/src/cx/cy/scale/rotate/link/restore/pinSize/labelSize`、マーカー属性 `x/y/label/photo/photoSrc/desc/color`）は**そのまま維持**（利用者の記法資産を変えない）。
+- マーカー配置の属性（`x/y/label/desc/color`）、コンテナのレイアウト属性（`cx/cy/scale/rotate/pinSize/labelSize`）はそのまま維持。
 
-### 置き換えが必要（GROWI API 依存部分）
+### 記法の変更点（要件 14-9〜11）
 
-| 既存（GROWI 依存） | Janus での置換 |
+既存プラグインの画像/写真参照属性（`file=`/`src=`/`photo=`/`photoSrc=`）は、**独立アセットライブラリを参照する新しい指定子に置き換える**:
+
+- マーカー/コンテナの画像参照に `filename:`（省略形 `file:`）と `aliasname:`（省略形 `alias:`）を使う。
+  - `filename:`（`file:`）= アセットの **filename** で参照。
+  - `aliasname:`（`alias:`）= アセットの **alias**（登録名）で参照。
+- コンテナ属性に**基準フォルダ**（例 `folder=本館/2F`）を追加し、`filename:`/`aliasname:` の解決基点とする（要件 14-10）。
+- 1 つの参照に両方の指定子が与えられた場合は**出現順で先頭を優先**し、解決失敗時に次を試す（要件 14-11）。
+- 既存プラグインの `link`（マップを開くボタン文言）・`restore` 等、アセット参照と無関係な属性は維持する。
+
+### 置き換えが必要（GROWI API 依存部分 + アセット参照方式）
+
+| 既存（GROWI 依存 / 旧記法） | Janus での置換 |
 |---|---|
 | `apiv3Get('/page')`, `getPageIdByPath` | `StorageClient.getPage(path)` |
-| `getAttachmentsForPage`, `resolveAttachmentUrl` | `AssetClient.listAssets` / `resolveAssetUrl` |
-| `/_api/v3/attachment`（アップロード） | `AssetClient.uploadAsset` |
-| `GROWI_CUSTOM_MAP_CONFIG`（グローバル設定） | Janus のアプリ設定（defaultSrc 相当・CAD API はフェーズ 3） |
-| `window.GROWI_CONTEXT` / `__NEXT_DATA__`（現在ページ解決） | React Router の現在ルート |
-| CAD 変換 API 連携（register.ts） | **フェーズ 3** に送る（フェーズ 1 は画像のみ） |
+| `getAttachmentsForPage`, `resolveAttachmentUrl`（ページ添付の候補ページ探索） | `AssetClient.listFolders`/`listAssets`/`resolveAssetUrl`（独立アセットライブラリ、要件 14） |
+| `file=`/`src=`/`photo=`/`photoSrc=`（ページ添付のファイル名参照） | `filename:`/`aliasname:` 指定子 + 基準フォルダ属性（要件 14-9,10） |
+| `/_api/v3/attachment`（アップロード） | `AssetClient.uploadAsset`（フォルダ指定・alias 任意） |
+| `GROWI_CUSTOM_MAP_CONFIG`（グローバル設定） | Janus のアプリ設定（既定フォルダ相当・CAD API はフェーズ 3） |
+| `window.GROWI_CONTEXT` / `__NEXT_DATA__`（現在ページ解決） | React Router の現在ルート（ただしアセット解決には用いない。基準フォルダのみで決まる） |
+| CAD 変換 API 連携（register.ts） | **フェーズ 3** に送る（フェーズ 1 は画像のみ。変換後は要件 14 のアセットライブラリに登録） |
 
-> フェーズ 1 の地図は「画像アセットの上にマーカー表示」まで。CAD 自動変換・GUI 編集・現場写真添付はフェーズ 3（要件 3-4,5 / 8 / 10）。
+> フェーズ 1 の地図は「画像アセット（独立ライブラリ）の上にマーカー表示」まで。CAD 自動変換・GUI 編集・現場写真添付はフェーズ 3（要件 3-4,5 / 8 / 10）。アセットライブラリはフォルダ作成・直下一覧・アップロードの最小 UI までをフェーズ 1 とし、移動・削除・階層操作の作り込みをフェーズ 3（要件 14-8）とする。
 
 ---
 
@@ -247,7 +324,7 @@ interface StorageClient extends AuthClient, PageClient, AssetClient, SearchClien
 │   ├── pyproject.toml / requirements.txt
 │   ├── janus/                    # settings, urls, wsgi/asgi
 │   └── api/                      # app: models, serializers, views, urls
-│       ├── models.py             # Page, Attachment
+│       ├── models.py             # Page, Folder, Asset
 │       ├── serializers.py
 │       ├── views.py              # auth, pages, assets
 │       └── urls.py
@@ -276,7 +353,8 @@ interface StorageClient extends AuthClient, PageClient, AssetClient, SearchClien
 - **API エラー**は DRF 標準の `{ detail }` / バリデーションエラー形式に統一し、`RestClient` が例外へ変換してフロントで表示。
 - **パス重複（要件 2-7）**は 409 Conflict を返し、フロントで「同一パスが既に存在」を通知。
 - **認証切れ**は 401 を返し、フロントはログイン画面へ誘導。
-- **アセット解決失敗（地図）**は既存同様フォールバックし、最終的に見つからなければ「マップ/画像が見つかりません」を表示（既存メッセージの思想を踏襲）。
+- **アセット解決失敗（地図）**は 7 章の解決手順（指定子を出現順に試す）を経ても見つからなければ「マップ/画像が見つかりません」を表示。
+- **アセットの重複登録・移動時の重複（要件 14-4,5）**は 409 Conflict を返し、フロントで「同一フォルダ内に同名のファイル/別名が既に存在します」等を通知。
 
 ---
 
@@ -297,3 +375,8 @@ interface StorageClient extends AuthClient, PageClient, AssetClient, SearchClien
 - draw.io 埋め込みの保存形式（Markdown 埋め込みか別アセットか）→ フェーズ 3。XML を本文中のコードフェンス or 専用ディレクティブで保持する案を軸に検討。
 - 全文検索の N-gram 実装詳細（FTS5 トークナイザ設定、ブラウザ側インデックス）→ フェーズ 4。
 - ローカル ⇔ サーバー同期（B 案）→ スコープ外。描画・ページのデータ形式は同期を阻害しない JSON 中心で保持。
+- **アセットライブラリのフォルダ GUI** → フェーズ 1 はフォルダ作成・直下一覧・アップロードまでの最小 UI を提供する。移動・削除・階層操作の作り込みはフェーズ 3（要件 14-8）。
+- **CAD 変換（.dxf/.jww → SVG）の実装詳細** → フェーズ 3。フェーズ 1 では変換結果をアセットライブラリに登録する受け口（要件 14-6）のみ設計し、変換ロジック自体は実装しない。元 CAD ファイルは保持しない方針（要件 8-1 改訂）。
+- **アセット参照解決（`resolveAssetUrl`）の実装場所** → クライアント側（`listFolders`/`listAssets` 利用）と確定（7 章）。ローカルモード（フェーズ 3）の `LocalClient` でも同じ解決アルゴリズムを IndexedDB に対して適用する想定。
+- **フォルダパス文字列の表記規則**（区切り文字・特殊文字のエスケープ等）→ 実装時に確定。本書では `本館/2F` のような `/` 区切り表記を例示に用いるのみ。
+- **アセット物理保存は案 Y（DB 階層・物理フラット・不透明 ID）で確定**（3 章「物理保存の方針」）。物理パスは論理階層を表現せず、エクスポートは DB の論理階層から構造を再構築する。エクスポート/インポート機能自体はフェーズ 1 スコープ外（将来の B 案同期と併せて設計）。

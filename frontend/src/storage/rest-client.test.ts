@@ -6,11 +6,11 @@
 //   レスポンスをモックして戻り値 / 例外を検証する。
 // - globals は使わず vitest から明示 import する（tsconfig を触らない方針）。
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { RestClient } from './rest-client'
 import { ApiError } from './types'
-import type { Asset, Page, PageSummary, User } from './types'
+import type { Asset, Folder, Page, PageSummary, User } from './types'
 
 // --- テスト用フィクスチャ -----------------------------------------------------
 
@@ -43,6 +43,7 @@ function mockResponse(
     ok: status >= 200 && status < 300,
     status,
     json: async () => body,
+    blob: async () => new Blob(['asset']),
   } as unknown as Response
 }
 
@@ -56,6 +57,10 @@ function stubFetch(): ReturnType<typeof vi.fn> {
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+beforeEach(() => {
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:asset')
 })
 
 // --- AuthClient ---------------------------------------------------------------
@@ -257,89 +262,153 @@ describe('deletePage', () => {
 
 // --- AssetClient --------------------------------------------------------------
 
-const sampleAsset: Asset = {
-  id: 5,
-  original_name: 'diagram.png',
-  url: 'http://localhost:8000/media/x/diagram.png',
-  content_type: 'image/png',
+const sampleFolder: Folder = {
+  id: 7,
+  parentId: null,
+  name: 'maps',
   created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
 }
 
-describe('listAssets', () => {
-  it('200 のとき Asset[] を返す（?path=）', async () => {
+const sampleAsset: Asset = {
+  id: 5,
+  folderId: 7,
+  filename: 'diagram.png',
+  alias: 'floor-plan',
+  url: '/api/assets/5/file',
+  content_type: 'image/png',
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+}
+
+describe('folders', () => {
+  it('root/子フォルダ一覧をGETする', async () => {
     const fetchMock = stubFetch()
-    fetchMock.mockResolvedValueOnce(mockResponse(200, [sampleAsset]))
+    fetchMock.mockResolvedValueOnce(mockResponse(200, [sampleFolder]))
     const client = new RestClient()
-    const assets = await client.listAssets('/docs/intro')
-    expect(assets).toEqual([sampleAsset])
-    const [url] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/pages/assets?path=%2Fdocs%2Fintro')
+    await expect(client.listFolders(null)).resolves.toEqual([sampleFolder])
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/folders')
+
+    fetchMock.mockResolvedValueOnce(mockResponse(200, []))
+    await client.listFolders(7)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/folders?parent=7')
+  })
+
+  it('フォルダをJSONで作成する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(201, sampleFolder))
+    const client = new RestClient()
+    await expect(client.createFolder({ parentId: null, name: 'maps' })).resolves.toEqual(sampleFolder)
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ parentId: null, name: 'maps' })
   })
 })
 
-describe('uploadAsset', () => {
-  it('FormData にフィールド名 "file" が載り、Content-Type を自前指定しない', async () => {
+describe('assets', () => {
+  it('フォルダ直下をGETする', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, [sampleAsset]))
+    const client = new RestClient()
+    await expect(client.listAssets(7)).resolves.toEqual([sampleAsset])
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/assets?folder=7')
+  })
+
+  it('multipartで登録しaliasも送れる', async () => {
     const fetchMock = stubFetch()
     fetchMock.mockResolvedValueOnce(mockResponse(201, sampleAsset))
     const client = new RestClient()
     const file = new File(['data'], 'diagram.png', { type: 'image/png' })
-    const asset = await client.uploadAsset('/docs/intro', file)
-    expect(asset).toEqual(sampleAsset)
-
+    await expect(client.uploadAsset({ folderId: 7, file, alias: 'floor-plan' })).resolves.toEqual(sampleAsset)
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api/pages/assets?path=%2Fdocs%2Fintro')
+    expect(url).toBe('/api/assets?folder=7')
     expect(init.method).toBe('POST')
-    // body は FormData で、フィールド "file" にファイルが載っていること。
     expect(init.body).toBeInstanceOf(FormData)
-    const sent = (init.body as FormData).get('file')
-    expect(sent).toBeInstanceOf(File)
-    expect((sent as File).name).toBe('diagram.png')
-    // Content-Type は fetch に任せる（手動指定しない）。
-    const headers = (init.headers ?? {}) as Record<string, string>
-    expect(headers['Content-Type']).toBeUndefined()
-    expect(headers['content-type']).toBeUndefined()
+    expect((init.body as FormData).get('file')).toBeInstanceOf(File)
+    expect((init.body as FormData).get('alias')).toBe('floor-plan')
+    expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined()
+  })
+
+  it('認証付きでfileを取得しBlob URLを返す', async () => {
+    const fetchMock = stubFetch()
+    fetchMock
+      .mockResolvedValueOnce(mockResponse(200, { token: 'tok123', user: sampleUser }))
+      .mockResolvedValueOnce(mockResponse(200, null))
+    const client = new RestClient()
+    await client.login('alice', 'secret')
+    await expect(client.getAssetFileUrl(sampleAsset)).resolves.toBe('blob:asset')
+    const [url, init] = fetchMock.mock.calls[1]
+    expect(url).toBe(sampleAsset.url)
+    expect(init.headers.Authorization).toBe('Token tok123')
+  })
+
+  it('Blob URLを明示的な解放契約でrevokeする', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    const client = new RestClient()
+    client.releaseAssetFileUrl('blob:asset')
+    client.releaseAssetFileUrl('https://cdn/asset')
+    expect(revoke).toHaveBeenCalledTimes(1)
+    expect(revoke).toHaveBeenCalledWith('blob:asset')
   })
 })
 
 describe('resolveAssetUrl', () => {
-  it('候補順で original_name 一致の url を返す', async () => {
+  it('基準フォルダをIDへ解決しfilenameを検索する', async () => {
     const fetchMock = stubFetch()
-    // 1 番目候補は不一致、2 番目候補で一致。
+    fetchMock
+      .mockResolvedValueOnce(mockResponse(200, [sampleFolder]))
+      .mockResolvedValueOnce(mockResponse(200, [sampleAsset]))
+      .mockResolvedValueOnce(mockResponse(200, null))
+    const client = new RestClient()
+    const url = await client.resolveAssetUrl({
+      baseFolderPath: 'maps',
+      specifiers: [{ kind: 'filename', value: 'diagram.png' }],
+    })
+    expect(url).toBe('blob:asset')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/folders')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/assets?folder=7')
+  })
+
+  it('specifierの出現順でfilename/aliasを試し、失敗時に次へ進む', async () => {
+    const fetchMock = stubFetch()
     fetchMock
       .mockResolvedValueOnce(mockResponse(200, []))
       .mockResolvedValueOnce(mockResponse(200, [sampleAsset]))
+      .mockResolvedValueOnce(mockResponse(200, null))
     const client = new RestClient()
-    const url = await client.resolveAssetUrl('diagram.png', [
-      '/other',
-      '/docs/intro',
-    ])
-    expect(url).toBe(sampleAsset.url)
+    const url = await client.resolveAssetUrl({
+      specifiers: [
+        { kind: 'filename', value: 'missing.png' },
+        { kind: 'alias', value: 'floor-plan' },
+      ],
+    })
+    expect(url).toBe('blob:asset')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/assets', '/api/assets', sampleAsset.url])
   })
 
-  it('全候補で不一致なら null を返す', async () => {
+  it('指定子の相対フォルダと絶対フォルダを解決する', async () => {
     const fetchMock = stubFetch()
     fetchMock
-      .mockResolvedValueOnce(mockResponse(200, []))
+      .mockResolvedValueOnce(mockResponse(200, [sampleFolder]))
+      .mockResolvedValueOnce(mockResponse(200, [{ ...sampleFolder, id: 8, parentId: 7, name: '2F' }]))
       .mockResolvedValueOnce(mockResponse(200, [sampleAsset]))
+      .mockResolvedValueOnce(mockResponse(200, null))
     const client = new RestClient()
-    const url = await client.resolveAssetUrl('missing.png', [
-      '/other',
-      '/docs/intro',
-    ])
-    expect(url).toBeNull()
+    await expect(client.resolveAssetUrl({
+      baseFolderPath: 'maps',
+      specifiers: [{ kind: 'filename', value: '2F/diagram.png' }],
+    })).resolves.toBe('blob:asset')
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/assets?folder=8')
   })
 
-  it('途中の 404 候補はスキップして次候補へ進む', async () => {
+  it('404フォルダは未解決としてnullを返す', async () => {
     const fetchMock = stubFetch()
-    fetchMock
-      .mockResolvedValueOnce(mockResponse(404, { detail: 'no page' }))
-      .mockResolvedValueOnce(mockResponse(200, [sampleAsset]))
+    fetchMock.mockResolvedValueOnce(mockResponse(200, []))
     const client = new RestClient()
-    const url = await client.resolveAssetUrl('diagram.png', [
-      '/missing',
-      '/docs/intro',
-    ])
-    expect(url).toBe(sampleAsset.url)
+    await expect(client.resolveAssetUrl({
+      baseFolderPath: 'missing',
+      specifiers: [{ kind: 'filename', value: 'map.png' }],
+    })).resolves.toBeNull()
   })
 })
 

@@ -132,7 +132,7 @@ function PageViewPage() {
         </button>
       </nav>
       <article>
-        <MarkdownRenderer body={page.body} currentPagePath={path} />
+        <MarkdownRenderer body={page.body} />
       </article>
       {children.length > 0 && (
         <section>

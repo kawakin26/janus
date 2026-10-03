@@ -26,8 +26,7 @@ urlpatterns = [
 ]
 
 # DEBUG 時のみ MEDIA_URL 直下を素の静的配信する（開発補助）。
-# これは listAssets が返す file の URL（/media/...）をブラウザで直接確認するための
-# もので権限制御は無い。権限制御付きの実体配信は /api/assets/<id>（AssetDetailView）
-# が別口で担い、本番のメディア配信は Web サーバー（nginx 等）に委ねる。役割は別。
+# これは開発時の静的メディア確認用で、権限制御は無い。APIが返すアセットURLは
+# 権限制御付きの /api/assets/<id>/file（AssetFileView）であり、役割は別。
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

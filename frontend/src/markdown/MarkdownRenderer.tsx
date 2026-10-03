@@ -22,11 +22,6 @@ import type { MapData } from './custom-map/types'
 export interface MarkdownRendererProps {
   /** 表示する Markdown 本文。 */
   body: string
-  /**
-   * 現在ページパス（/view/* の splat 由来）。地図記法の写真解決の候補基点に使う。
-   * 未指定でもレンダラは動作する（レンダラ自体は React Router に非依存）。
-   */
-  currentPagePath?: string
 }
 
 /** data-custom-map 属性（文字列）から MapData を安全に復元する。失敗時 null。 */
@@ -48,7 +43,7 @@ function isExternalHref(href: string | undefined): boolean {
 }
 
 // components を現在ページパスに応じて組み立てる。
-function buildComponents(currentPagePath?: string): Components {
+function buildComponents(): Components {
   return {
     a({ href, children, ...rest }) {
       if (isExternalHref(href)) {
@@ -72,7 +67,7 @@ function buildComponents(currentPagePath?: string): Components {
       void _node
       const mapData = parseMapDataAttr(domProps['data-custom-map'])
       if (mapData !== null) {
-        return <CustomMapViewer mapData={mapData} currentPagePath={currentPagePath} />
+        return <CustomMapViewer mapData={mapData} />
       }
       return <div {...domProps}>{children}</div>
     },
@@ -87,11 +82,11 @@ const remarkPlugins = [remarkGfm, remarkDirective, remarkCustomMap, remarkDirect
 /**
  * Markdown 本文を安全に（生 HTML 無効で）レンダリングする。
  */
-function MarkdownRenderer({ body, currentPagePath }: MarkdownRendererProps) {
+function MarkdownRenderer({ body }: MarkdownRendererProps) {
   if (body === '') {
     return null
   }
-  const components = buildComponents(currentPagePath)
+  const components = buildComponents()
   return (
     <ReactMarkdown remarkPlugins={remarkPlugins} components={components}>
       {body}

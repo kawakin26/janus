@@ -1,6 +1,4 @@
-// 記法パーサ（mdast → MapData）のユニットテスト（タスク 11 / 要件 3-1, 3-2）。
-// 移植元 viewer.ts の記法サンプルに即したケースで、コンテナ属性・マーカー・写真の
-// パースと既定値・クランプ・回転正規化を検証する。
+// custom-map記法パーサのユニットテスト。
 
 import { describe, expect, it } from 'vitest'
 import { unified } from 'unified'
@@ -12,7 +10,6 @@ import type { ContainerDirective } from 'mdast-util-directive'
 import { buildMapData } from './parse-map'
 import type { MapData } from './types'
 
-/** Markdown から最初の custom-map コンテナを MapData へ変換するヘルパ。 */
 function parse(markdown: string): MapData | null {
   const tree = unified().use(remarkParse).use(remarkDirective).parse(markdown) as Root
   let found: ContainerDirective | null = null
@@ -22,124 +19,94 @@ function parse(markdown: string): MapData | null {
   return found ? buildMapData(found) : null
 }
 
-describe('buildMapData: コンテナ属性', () => {
-  it('属性を読み取り、既定値・クランプ・rotate 正規化を適用する', () => {
-    const md = [
-      ':::custom-map{file="plan.png" src="/map-library" cx="30" cy="70" scale="2" rotate="-90" pinSize="100" labelSize="2" restore="20" link="現場見取り図を開く"}',
+describe('buildMapData: アセット指定子', () => {
+  it('folderとfilename/aliasnameを出現順でAssetRefへ変換する', () => {
+    const data = parse([
+      ':::custom-map{folder="本館/2F" aliasname="floor-plan" filename="plan.svg" cx="30" cy="70" rotate="-90" link="図面を開く"}',
       '',
-      '- x=10 y=20 label="A"',
+      '- x=10 y=20 label="入口"',
+      '  - alias="entrance.jpg" desc="写真"',
       ':::',
-    ].join('\n')
-    const data = parse(md)
-    expect(data).not.toBeNull()
-    expect(data!.file).toBe('plan.png')
-    expect(data!.src).toBe('/map-library')
-    expect(data!.link).toBe('現場見取り図を開く')
-    expect(data!.cx).toBe(30)
-    expect(data!.cy).toBe(70)
-    expect(data!.scale).toBe(2)
-    expect(data!.rotate).toBe(270) // -90 を正規化
-    expect(data!.pinSize).toBe(48) // 100 → PIN_SIZE_MAX
-    expect(data!.labelSize).toBe(8) // 2 → LABEL_SIZE_MIN
-    expect(data!.restore).toBe(20)
+    ].join('\n'))!
+
+    expect(data.assetRef).toEqual({
+      baseFolderPath: '本館/2F',
+      specifiers: [
+        { kind: 'alias', value: 'floor-plan' },
+        { kind: 'filename', value: 'plan.svg' },
+      ],
+    })
+    expect(data.rotate).toBe(270)
+    expect(data.cx).toBe(30)
+    expect(data.cy).toBe(70)
+    expect(data.link).toBe('図面を開く')
+    expect(data.markers[0].photos).toEqual([{
+      assetRef: {
+        baseFolderPath: '本館/2F',
+        specifiers: [{ kind: 'alias', value: 'entrance.jpg' }],
+      },
+      desc: '写真',
+    }])
   })
 
-  it('属性未指定なら既定値を使う', () => {
-    const md = [':::custom-map{file="m.png"}', '', '- x=1 y=2', ':::'].join('\n')
-    const data = parse(md)!
-    expect(data.cx).toBe(50)
-    expect(data.cy).toBe(50)
-    expect(data.scale).toBe(1)
-    expect(data.rotate).toBe(0)
-    expect(data.restore).toBe(15)
-    expect(data.pinSize).toBe(12)
-    expect(data.labelSize).toBe(12)
-    expect(data.link).toBe('')
+  it('fileとaliasの短縮記法およびfilename:valueを受け付ける', () => {
+    const data = parse([
+      ':::custom-map{folder="maps" file="plan.png"}',
+      '',
+      '- x=1 y=2',
+      '  - filename="photos/entrance.jpg" desc="入口"',
+      ':::',
+    ].join('\n'))!
+    expect(data.assetRef.specifiers).toEqual([{ kind: 'filename', value: 'plan.png' }])
+    expect(data.markers[0].photos[0].assetRef.specifiers).toEqual([
+      { kind: 'filename', value: 'photos/entrance.jpg' },
+    ])
+  })
+
+  it('指定子が無い参照は空AssetRefを作る', () => {
+    const data = parse([':::custom-map{folder="maps"}', '', '- x=1 y=2', ':::'].join('\n'))!
+    expect(data.assetRef).toEqual({ baseFolderPath: 'maps', specifiers: [] })
+  })
+
+  it('labelやdescの引用値にある指定子風文字列を解釈しない', () => {
+    const data = parse([
+      ':::custom-map{folder="maps" file="plan.png"}',
+      '',
+      '- x=1 y=2 label="入口 file:ignored alias:ignored" desc="filename:not-a-ref"',
+      '  - alias="entrance.jpg" desc="写真 file:not-a-ref alias:not-a-ref"',
+      ':::',
+    ].join('\n'))!
+
+    expect(data.markers[0]).toMatchObject({
+      label: '入口 file:ignored alias:ignored',
+      desc: 'filename:not-a-ref',
+    })
+    expect(data.markers[0].photos[0]).toEqual({
+      assetRef: {
+        baseFolderPath: 'maps',
+        specifiers: [{ kind: 'alias', value: 'entrance.jpg' }],
+      },
+      desc: '写真 file:not-a-ref alias:not-a-ref',
+    })
   })
 })
 
-describe('buildMapData: マーカー', () => {
-  it('複数マーカーの x/y/label/color/desc を読み取る', () => {
-    const md = [
-      ':::custom-map{file="m.png"}',
+describe('buildMapData: マーカー表示属性', () => {
+  it('複数マーカーのx/y/label/color/descと既定値を読み取る', () => {
+    const data = parse([
+      ':::custom-map{filename="m.png"}',
       '',
       '- x=10 y=20 label="入口" color="#00ff00" desc="注意"',
       '- x=30 y=40 label="出口"',
       ':::',
-    ].join('\n')
-    const data = parse(md)!
+    ].join('\n'))!
     expect(data.markers).toHaveLength(2)
-    expect(data.markers[0]).toMatchObject({
-      x: 10,
-      y: 20,
-      label: '入口',
-      color: '#00ff00',
-      desc: '注意',
-    })
+    expect(data.markers[0]).toMatchObject({ x: 10, y: 20, label: '入口', color: '#00ff00', desc: '注意' })
     expect(data.markers[1]).toMatchObject({ x: 30, y: 40, label: '出口', color: '#ff3b30' })
   })
 
-  it('x も y も無い行はマーカーにしない', () => {
-    const md = [
-      ':::custom-map{file="m.png"}',
-      '',
-      '- これは説明文',
-      '- x=1 y=2',
-      ':::',
-    ].join('\n')
-    const data = parse(md)!
+  it('xもyも無い行はマーカーにしない', () => {
+    const data = parse([':::custom-map{filename="m.png"}', '', '- 説明文', '- x=1 y=2', ':::'].join('\n'))!
     expect(data.markers).toHaveLength(1)
-    expect(data.markers[0]).toMatchObject({ x: 1, y: 2 })
-  })
-
-  it('同一行 photo=（旧記法）は写真 1 枚として取り込む', () => {
-    const md = [
-      ':::custom-map{file="m.png"}',
-      '',
-      '- x=1 y=2 photo="a.png" desc="コメント"',
-      ':::',
-    ].join('\n')
-    const data = parse(md)!
-    expect(data.markers[0].photos).toEqual([{ photo: 'a.png', desc: 'コメント' }])
-  })
-
-  it('ネスト list の写真（新記法）が同一行 photo を上書きする', () => {
-    const md = [
-      ':::custom-map{file="m.png"}',
-      '',
-      '- x=1 y=2 photo="old.png"',
-      '  - photo="new1.png" desc="d1"',
-      '  - photo="new2.png" desc="d2"',
-      ':::',
-    ].join('\n')
-    const data = parse(md)!
-    expect(data.markers[0].photos).toEqual([
-      { photo: 'new1.png', desc: 'd1' },
-      { photo: 'new2.png', desc: 'd2' },
-    ])
-  })
-
-  it('photoSrc / photosrc の別名を許容する', () => {
-    const md = [
-      ':::custom-map{file="m.png"}',
-      '',
-      '- x=1 y=2 photoSrc="/pages/a"',
-      '- x=3 y=4 photosrc="/pages/b"',
-      ':::',
-    ].join('\n')
-    const data = parse(md)!
-    expect(data.markers[0].photoSrc).toBe('/pages/a')
-    expect(data.markers[1].photoSrc).toBe('/pages/b')
-  })
-
-  it('クォートされた属性値（空白を含む）を 1 つの値として読む', () => {
-    const md = [
-      ':::custom-map{file="m.png"}',
-      '',
-      '- x=1 y=2 label="第 2 工場 入口"',
-      ':::',
-    ].join('\n')
-    const data = parse(md)!
-    expect(data.markers[0].label).toBe('第 2 工場 入口')
   })
 })

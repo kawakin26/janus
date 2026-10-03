@@ -16,6 +16,8 @@
 import { ApiError } from './types'
 import type {
   Asset,
+  AssetRef,
+  Folder,
   Page,
   PageSummary,
   SearchHit,
@@ -260,56 +262,162 @@ export class RestClient implements StorageClient {
   // AssetClient
   // -------------------------------------------------------------------------
 
-  async listAssets(pagePath: string): Promise<Asset[]> {
-    const response = await fetch(
-      this.url(`pages/assets?path=${encodeURIComponent(pagePath)}`),
-      { method: 'GET', headers: { ...this.authHeaders() } },
-    )
+  async listFolders(parentFolderId: number | null): Promise<Folder[]> {
+    const query = parentFolderId === null ? '' : `?parent=${encodeURIComponent(parentFolderId)}`
+    const response = await fetch(this.url(`folders${query}`), {
+      method: 'GET',
+      headers: { ...this.authHeaders() },
+    })
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as Folder[]
+  }
+
+  async createFolder(input: { parentId: number | null; name: string }): Promise<Folder> {
+    const response = await fetch(this.url('folders'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+      body: JSON.stringify(input),
+    })
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as Folder
+  }
+
+  async listAssets(folderId: number | null): Promise<Asset[]> {
+    const query = folderId === null ? '' : `?folder=${encodeURIComponent(folderId)}`
+    const response = await fetch(this.url(`assets${query}`), {
+      method: 'GET',
+      headers: { ...this.authHeaders() },
+    })
     if (!response.ok) {
       throw await this.toApiError(response)
     }
     return (await response.json()) as Asset[]
   }
 
-  async uploadAsset(pagePath: string, file: File): Promise<Asset> {
-    // multipart/form-data のフィールド名は "file"。
-    // Content-Type（boundary 付き）は fetch に委ね、手動で指定しない。
+  async uploadAsset(input: {
+    folderId: number | null
+    file: File
+    alias?: string
+  }): Promise<Asset> {
+    const query = input.folderId === null ? '' : `?folder=${encodeURIComponent(input.folderId)}`
     const form = new FormData()
-    form.append('file', file)
-    const response = await fetch(
-      this.url(`pages/assets?path=${encodeURIComponent(pagePath)}`),
-      { method: 'POST', headers: { ...this.authHeaders() }, body: form },
-    )
+    form.append('file', input.file)
+    if (input.alias !== undefined) {
+      form.append('alias', input.alias)
+    }
+    const response = await fetch(this.url(`assets${query}`), {
+      method: 'POST',
+      headers: { ...this.authHeaders() },
+      body: form,
+    })
     if (!response.ok) {
       throw await this.toApiError(response)
     }
     return (await response.json()) as Asset
   }
 
-  async resolveAssetUrl(
-    originalName: string,
-    candidatePagePaths: string[],
-  ): Promise<string | null> {
-    // 候補ページを順に listAssets し、original_name 一致の最初の Asset の url を返す。
-    // 解決ロジックはクライアント側（タスク 6 で確定済みの設計判断）。
-    for (const pagePath of candidatePagePaths) {
-      let assets: Asset[]
-      try {
-        assets = await this.listAssets(pagePath)
-      } catch (error) {
-        // ページが存在しない（404）候補は「添付無し」としてスキップし次候補へ進む
-        // （多段フォールバックの思想）。それ以外のエラーは呼び出し側へ伝播する。
-        if (error instanceof ApiError && error.status === 404) {
-          continue
-        }
-        throw error
-      }
-      const matched = assets.find((asset) => asset.original_name === originalName)
-      if (matched !== undefined) {
-        return matched.url
+  async moveAsset(assetId: number, toFolderId: number | null): Promise<Asset> {
+    const response = await fetch(this.url(`assets/${encodeURIComponent(assetId)}`), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+      body: JSON.stringify({ folderId: toFolderId }),
+    })
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as Asset
+  }
+
+  /**
+   * 認証ヘッダ付きでファイルを取得し、img/aから利用できる一時URLを作る。
+   * ネイティブ要素のリクエストにはRestClientのAuthorizationヘッダが引き継がれないため、
+   * 保護されたfileエンドポイントをBlob URLへ変換して返す。
+   */
+  async getAssetFileUrl(asset: Asset): Promise<string> {
+    const response = await fetch(asset.url, {
+      method: 'GET',
+      headers: { ...this.authHeaders() },
+    })
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return URL.createObjectURL(await response.blob())
+  }
+
+  /** getAssetFileUrlが返したBlob URLを解放する。 */
+  releaseAssetFileUrl(url: string): void {
+    if (url.startsWith('blob:')) {
+      URL.revokeObjectURL(url)
+    }
+  }
+
+  /** パスを正規化し、基準フォルダからの相対パスまたはルートからの絶対パスにする。 */
+  private folderSegments(path: string | undefined, base: string[] = []): string[] {
+    const value = (path ?? '').trim()
+    const segments = value.startsWith('/') ? [] : [...base]
+    for (const segment of value.split('/')) {
+      if (!segment || segment === '.') continue
+      if (segment === '..') {
+        segments.pop()
+      } else {
+        segments.push(segment)
       }
     }
-    // 全候補で見つからなければ null。
+    return segments
+  }
+
+  /** フォルダ木を辿ってIDを解決する。見つからない場合は undefined。 */
+  private async findFolderId(path: string | undefined): Promise<number | null | undefined> {
+    const segments = this.folderSegments(path)
+    let parentId: number | null = null
+    for (const segment of segments) {
+      const folders = await this.listFolders(parentId)
+      const folder = folders.find((candidate) => candidate.name === segment)
+      if (folder === undefined) return undefined
+      parentId = folder.id
+    }
+    return parentId
+  }
+
+  /**
+   * AssetRef の指定子を出現順に試し、指定子値のスラッシュ部分をフォルダパスとして解決する。
+   * フォルダが見つからない指定子は次へ進み、APIの認証/その他エラーは呼び出し元へ返す。
+   */
+  async resolveAssetUrl(ref: AssetRef): Promise<string | null> {
+    const baseSegments = this.folderSegments(ref.baseFolderPath)
+    const folderCache = new Map<string, number | null | undefined>()
+    const resolveFolder = async (segments: string[]): Promise<number | null | undefined> => {
+      const key = segments.join('/')
+      const cached = folderCache.get(key)
+      if (cached !== undefined || folderCache.has(key)) return cached
+      const folderId = await this.findFolderId(key ? `/${key}` : '')
+      folderCache.set(key, folderId)
+      return folderId
+    }
+
+    for (const specifier of ref.specifiers) {
+      const value = specifier.value.trim()
+      if (!value) continue
+      const slash = value.lastIndexOf('/')
+      const name = slash >= 0 ? value.slice(slash + 1) : value
+      if (!name) continue
+      const folderSegments = slash >= 0
+        ? this.folderSegments(value.slice(0, slash), value.startsWith('/') ? [] : baseSegments)
+        : baseSegments
+      const folderId = await resolveFolder(folderSegments)
+      if (folderId === undefined) continue
+      const assets = await this.listAssets(folderId)
+      const asset = assets.find((candidate) =>
+        specifier.kind === 'filename'
+          ? candidate.filename === name
+          : candidate.alias === name,
+      )
+      if (asset !== undefined) return this.getAssetFileUrl(asset)
+    }
     return null
   }
 

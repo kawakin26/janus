@@ -9,15 +9,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 import { useStorage } from '../../storage/StorageProvider'
+import { usePageError } from '../../pages/use-page-error'
+import type { PageErrorHandler } from '../../pages/use-page-error'
 import type { MapData, MarkerData } from './types'
 import { PIN_SIZE_DEFAULT, LABEL_SIZE_DEFAULT, clamp, textColorForBg } from './map-utils'
 import { DEFAULT_OPEN_LABEL, getMinimizedPinSize } from './config'
-import { resolveMapImageUrl, resolvePhotoUrl } from './resolve-assets'
+import { resolveMapImageUrl, resolvePhotoUrl, assetRefLabel } from './resolve-assets'
 
 export interface CustomMapViewerProps {
   mapData: MapData
-  /** 現在ページパス（/view/* の splat 由来）。写真解決の候補基点に使う。 */
-  currentPagePath?: string
 }
 
 /** 詳細ポップアップで表示する 1 写真分の解決結果。 */
@@ -62,8 +62,9 @@ function ensureBlinkStyle(): void {
  * モーダル内で画像の上にマーカーを重畳し、パン/ズーム/回転・最小化/復帰・
  * 写真/説明ポップアップを提供する。
  */
-function CustomMapViewer({ mapData, currentPagePath }: CustomMapViewerProps) {
+function CustomMapViewer({ mapData }: CustomMapViewerProps) {
   const storage = useStorage()
+  const handleError = usePageError()
   const [open, setOpen] = useState(false)
 
   // link 属性があればボタン文言に使い、未指定時は既定文言（移植元の link || openMapLabel() 相当）。
@@ -80,8 +81,8 @@ function CustomMapViewer({ mapData, currentPagePath }: CustomMapViewerProps) {
       {open && (
         <MapModal
           mapData={mapData}
-          currentPagePath={currentPagePath}
           storage={storage}
+          onError={handleError}
           onClose={handleClose}
         />
       )}
@@ -91,8 +92,8 @@ function CustomMapViewer({ mapData, currentPagePath }: CustomMapViewerProps) {
 
 interface MapModalProps {
   mapData: MapData
-  currentPagePath?: string
   storage: ReturnType<typeof useStorage>
+  onError: PageErrorHandler
   onClose: () => void
 }
 
@@ -149,10 +150,11 @@ const viewportStyle: CSSProperties = {
 }
 
 /** マップ画像とマーカーを表示するモーダル。開くたびに画像 URL を解決する。 */
-function MapModal({ mapData, currentPagePath, storage, onClose }: MapModalProps) {
-  // 解決状態: 'resolving'（解決中）/ 'resolved'（URL あり）/ 'not-found'（URL なし）。
-  const [status, setStatus] = useState<'resolving' | 'resolved' | 'not-found'>('resolving')
+function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
+  // 解決状態: 'resolving'（解決中）/ 'resolved'（URL あり）/ 'not-found'（URL なし）/ 'error'（取得エラー）。
+  const [status, setStatus] = useState<'resolving' | 'resolved' | 'not-found' | 'error'>('resolving')
   const [imageUrl, setImageUrl] = useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [detail, setDetail] = useState<DetailState | null>(null)
 
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -174,20 +176,40 @@ function MapModal({ mapData, currentPagePath, storage, onClose }: MapModalProps)
     void (async () => {
       try {
         const url = await resolveMapImageUrl(storage, mapData)
-        if (!active) return
+        if (!active) {
+          if (url !== null) storage.releaseAssetFileUrl(url)
+          return
+        }
         setImageUrl(url)
         setStatus(url === null ? 'not-found' : 'resolved')
-      } catch {
-        // 解決に失敗（権限・ネットワーク等）しても「見つかりません」で無害に扱う。
+      } catch (err) {
+        const message = onError(err, 'マップ画像の取得に失敗しました')
         if (!active) return
         setImageUrl(null)
-        setStatus('not-found')
+        setErrorMessage(message)
+        setStatus('error')
       }
     })()
     return () => {
       active = false
     }
-  }, [storage, mapData])
+  }, [storage, mapData, onError])
+
+  // マップ画像の一時URLは表示中だけ所有し、再表示・アンマウント時に解放する。
+  useEffect(() => {
+    if (imageUrl === null) return
+    return () => storage.releaseAssetFileUrl(imageUrl)
+  }, [imageUrl, storage])
+
+  // 写真ポップアップの一時URLも閉じた時・別内容への切替時に解放する。
+  useEffect(() => {
+    if (detail === null) return
+    return () => {
+      for (const photo of detail.photos) {
+        if (photo.url) storage.releaseAssetFileUrl(photo.url)
+      }
+    }
+  }, [detail, storage])
 
   // ビュー状態（scale / 平行移動）。描画中に書き換えるため ref で保持する。
   const view = useRef({ scale: mapData.scale || 1, tx: 0, ty: 0 })
@@ -368,16 +390,18 @@ function MapModal({ mapData, currentPagePath, storage, onClose }: MapModalProps)
       const resolved = await Promise.all(
         photos.map(async (p): Promise<ResolvedPhoto> => {
           try {
-            const url = await resolvePhotoUrl(storage, p.photo, marker, currentPagePath)
-            return { url: url ?? '', desc: p.desc, name: p.photo }
-          } catch {
-            return { url: '', desc: p.desc, name: p.photo }
+            const url = await resolvePhotoUrl(storage, p)
+            return { url: url ?? '', desc: p.desc, name: assetRefLabel(p.assetRef) }
+          } catch (err) {
+            const message = onError(err, '写真の取得に失敗しました')
+            if (message !== null) setErrorMessage(message)
+            return { url: '', desc: p.desc, name: assetRefLabel(p.assetRef) }
           }
         }),
       )
       setDetail({ photos: resolved, caption: marker.label, markerDesc: marker.desc })
     },
-    [storage, currentPagePath],
+    [storage, onError],
   )
 
   return (
@@ -393,8 +417,12 @@ function MapModal({ mapData, currentPagePath, storage, onClose }: MapModalProps)
           ×
         </button>
 
-        {status === 'not-found' ? (
-          <MapNotFound fileName={mapData.file} />
+        {status === 'error' ? (
+          <p role="alert" style={{ width: 'min(80vw, 640px)', padding: '8px 4px', textAlign: 'center' }}>
+            {errorMessage}
+          </p>
+        ) : status === 'not-found' ? (
+          <MapNotFound fileName={assetRefLabel(mapData.assetRef)} />
         ) : (
           <div
             ref={viewportRef}
@@ -412,7 +440,7 @@ function MapModal({ mapData, currentPagePath, storage, onClose }: MapModalProps)
                 <img
                   ref={imgRef}
                   src={imageUrl}
-                  alt={mapData.file}
+                  alt={assetRefLabel(mapData.assetRef)}
                   draggable={false}
                   onLoad={handleImageLoad}
                   style={{ display: 'block', userSelect: 'none', pointerEvents: 'none' }}
@@ -435,6 +463,9 @@ function MapModal({ mapData, currentPagePath, storage, onClose }: MapModalProps)
             </div>
           </div>
         )}
+        {errorMessage !== null && status !== 'error' && (
+          <p role="alert" style={{ margin: '8px 0 0', color: '#b00020' }}>{errorMessage}</p>
+        )}
       </div>
 
       {detail !== null && <DetailPopup detail={detail} onClose={() => setDetail(null)} />}
@@ -456,7 +487,7 @@ function MapNotFound({ fileName }: { fileName: string }) {
         </code>{' '}
         が見つかりませんでした。
         <br />
-        ファイル名が、マップを保存したページの添付ファイル名と一致しているか確認してください。
+        ファイル名または別名が、アセットライブラリに登録した値と一致しているか確認してください。
       </div>
     </div>
   )

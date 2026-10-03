@@ -5,8 +5,10 @@
 
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import MarkdownRenderer from './MarkdownRenderer'
 import { StorageProvider } from '../storage/StorageProvider'
+import { AuthProvider } from '../auth/AuthContext'
 import { createStubStorage } from '../test/stub-storage'
 
 describe('MarkdownRenderer', () => {
@@ -29,10 +31,14 @@ describe('MarkdownRenderer', () => {
   })
 
   it('custom-map を地図ビューア（「マップを開く」ボタン）として描画する', () => {
-    const body = ':::custom-map{file="map.png" src="/map-library"}\n\n- x=10 y=20 label="A"\n:::'
+    const body = ':::custom-map{folder="maps" filename="map.png"}\n\n- x=10 y=20 label="A"\n:::'
     render(
       <StorageProvider client={createStubStorage({ resolveAssetUrl: async () => null })}>
-        <MarkdownRenderer body={body} currentPagePath="/pages/here" />
+        <MemoryRouter>
+          <AuthProvider>
+            <MarkdownRenderer body={body} />
+          </AuthProvider>
+        </MemoryRouter>
       </StorageProvider>,
     )
     // custom-map は fallback のプレースホルダではなく専用ビューアに差し替わる。

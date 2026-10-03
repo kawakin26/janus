@@ -1,12 +1,9 @@
-// 記法パーサ（mdast → MapData）（タスク 11 / 要件 3-1, 3-2）。
-//
-// 出典: GROWI プラグイン growi-plugin-custom-map v0.3.1 の src/viewer.ts からの移植。
-// `:::custom-map` コンテナディレクティブノードを受け取り、GROWI 非依存の純関数として
-// MapData を構築する。HTML 文字列の再パースはせず mdast から直接組み立てる（堅牢）。
-// 記法仕様（属性名・既定値・クランプ範囲）は不変に保つ。
+// 記法パーサ（mdast → MapData）。
+// filename/file と aliasname/alias の指定子を記法上の出現順で保持する。
 
 import type { ContainerDirective } from 'mdast-util-directive'
 import type { Nodes } from 'mdast'
+import type { AssetRef, AssetSpecifier } from '../../storage/types'
 import type { MapData, MarkerData, PhotoData } from './types'
 import {
   LABEL_SIZE_DEFAULT,
@@ -20,169 +17,231 @@ import {
   toNumber,
 } from './map-utils'
 
-// editor 側 attrStr のエスケープ（"→\"）に対応するため、\" \' を許容して拾う。
-const KV_REGEX = /(\w+)\s*=\s*(?:"((?:\\"|[^"])*)"|'((?:\\'|[^'])*)'|(\S+))/g
+interface AttributeEntry {
+  key: string
+  value: string
+}
 
-/** エスケープされた \" \' を元に戻す（editor 側 attrStr の逆）。 */
+const COLON_KEYS = new Set(['filename', 'file', 'aliasname', 'alias'])
+
 function unescapeAttr(s: string): string {
   return s.replace(/\\(["'])/g, '$1')
 }
 
-/** `key=value`（クォート/エスケープ対応）の列を属性オブジェクトへ。 */
+function isWordChar(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z0-9_]/.test(char)
+}
+
+interface ParsedValue {
+  value: string
+  nextIndex: number
+}
+
+function readAttrValue(text: string, start: number): ParsedValue | null {
+  const quote = text[start]
+  if (quote === '"' || quote === "'") {
+    let index = start + 1
+    while (index < text.length) {
+      if (text[index] === '\\') {
+        index += 2
+        continue
+      }
+      if (text[index] === quote) {
+        return {
+          value: unescapeAttr(text.slice(start + 1, index)),
+          nextIndex: index + 1,
+        }
+      }
+      index += 1
+    }
+    return null
+  }
+
+  let index = start
+  while (index < text.length && !/\s/.test(text[index])) index += 1
+  if (index === start) return null
+  return { value: unescapeAttr(text.slice(start, index)), nextIndex: index }
+}
+
+/** key=value と filename:value の両方を読み、入力位置順に返す。 */
+function parseAttrEntries(text: string): AttributeEntry[] {
+  const entries: AttributeEntry[] = []
+  let index = 0
+
+  while (index < text.length) {
+    // 属性値でない引用符付きテキストもひとまとまりとして読み飛ばし、
+    // 値の中に書かれた file:/alias: を指定子として解釈しない。
+    if (text[index] === '"' || text[index] === "'") {
+      const quoted = readAttrValue(text, index)
+      index = quoted?.nextIndex ?? text.length
+      continue
+    }
+
+    if (!isWordChar(text[index]) || isWordChar(text[index - 1])) {
+      index += 1
+      continue
+    }
+
+    const keyStart = index
+    while (index < text.length && isWordChar(text[index])) index += 1
+    const key = text.slice(keyStart, index)
+    while (/\s/.test(text[index] ?? '')) index += 1
+    const operator = text[index]
+    if (operator !== '=' && !(operator === ':' && COLON_KEYS.has(key))) continue
+
+    index += 1
+    while (/\s/.test(text[index] ?? '')) index += 1
+    const parsed = readAttrValue(text, index)
+    if (parsed === null) continue
+    entries.push({ key, value: parsed.value })
+    index = parsed.nextIndex
+  }
+
+  return entries
+}
+
 function parseAttrs(text: string): Record<string, string> {
   const attrs: Record<string, string> = {}
-  let m: RegExpExecArray | null
-  KV_REGEX.lastIndex = 0
-  while ((m = KV_REGEX.exec(text)) !== null) {
-    const key = m[1]
-    const raw = m[2] ?? m[3] ?? m[4] ?? ''
-    attrs[key] = unescapeAttr(raw)
-  }
+  for (const { key, value } of parseAttrEntries(text)) attrs[key] = value
   return attrs
 }
 
-/**
- * マーカー行を MarkerData に変換。photos は空で返し、子リストは呼び出し側で足す。
- * 後方互換: 同じ行に photo= があれば写真 1 枚として photos に取り込む。
- * x も y も無い行はマーカーではないとみなし null。
- */
+function specifierKind(key: string): AssetSpecifier['kind'] | null {
+  if (key === 'filename' || key === 'file') return 'filename'
+  if (key === 'aliasname' || key === 'alias') return 'alias'
+  return null
+}
+
+function makeAssetRef(
+  entries: AttributeEntry[],
+  baseFolderPath?: string,
+): AssetRef {
+  const specifiers: AssetSpecifier[] = []
+  for (const { key, value } of entries) {
+    const kind = specifierKind(key)
+    if (kind !== null && value) specifiers.push({ kind, value })
+  }
+  return {
+    ...(baseFolderPath ? { baseFolderPath } : {}),
+    specifiers,
+  }
+}
+
+function entriesFromAttributes(attributes: Record<string, string | null | undefined>): AttributeEntry[] {
+  return Object.entries(attributes)
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+    .map(([key, value]) => ({ key, value }))
+}
+
+/** マーカー行を MarkerData に変換。xもyも無い行はマーカーではない。 */
 function parseMarkerLine(text: string): MarkerData | null {
   const attrs = parseAttrs(text)
   if (attrs.x == null && attrs.y == null) return null
-  const photos: PhotoData[] = []
-  if (attrs.photo) photos.push({ photo: attrs.photo, desc: attrs.desc || '' })
   return {
     x: toNumber(attrs.x, 50),
     y: toNumber(attrs.y, 50),
     label: attrs.label || '',
-    photo: attrs.photo || '',
-    photoSrc: attrs.photoSrc || attrs.photosrc || '',
     desc: attrs.desc || '',
     color: attrs.color || '#ff3b30',
-    photos,
+    photos: [],
   }
 }
 
-/** 写真の子リスト行を PhotoData に変換。photo が無ければ null。 */
-function parsePhotoLine(text: string): PhotoData | null {
+/** 写真の子リスト行をPhotoDataへ変換。指定子が無ければnull。 */
+function parsePhotoLine(text: string, baseFolderPath?: string): PhotoData | null {
+  const entries = parseAttrEntries(text)
   const attrs = parseAttrs(text)
-  if (!attrs.photo) return null
-  return { photo: attrs.photo, desc: attrs.desc || '' }
+  const assetRef = makeAssetRef(entries, baseFolderPath)
+  if (assetRef.specifiers.length === 0) return null
+  return { assetRef, desc: attrs.desc || '' }
 }
 
 /** ノード配下の text / inlineCode を連結して素のテキストを取り出す。 */
 function extractTextFromNode(node: Nodes): string {
   if (node == null) return ''
-  if (
-    (node.type === 'text' || node.type === 'inlineCode') &&
-    typeof node.value === 'string'
-  ) {
+  if (node.type === 'textDirective' && 'name' in node && typeof node.name === 'string') {
+    return `:${node.name}`
+  }
+  if ((node.type === 'text' || node.type === 'inlineCode') && typeof node.value === 'string') {
     return node.value
   }
   const children = 'children' in node && Array.isArray(node.children) ? node.children : []
   let text = ''
-  for (const child of children) {
-    text += extractTextFromNode(child as Nodes)
-  }
+  for (const child of children) text += extractTextFromNode(child as Nodes)
   return text
 }
 
-/**
- * custom-map ブロック直下の「最初の list」を探して、そのトップレベル listItem 群を返す。
- * これらがマーカー行。各 listItem 内にネストした list があればそれが写真（子）。
- * 「全 listItem を平坦収集」だと写真行までマーカー扱いになるため、階層を保つ。
- */
+/** custom-mapブロック直下の最初のlistのトップレベルlistItemを返す。 */
 function findTopLevelListItems(node: Nodes): Nodes[] {
   let list: Nodes | null = null
-  const findList = (n: Nodes): void => {
-    if (list || n == null) return
-    if (n.type === 'list') {
-      list = n
+  const findList = (current: Nodes): void => {
+    if (list || current == null) return
+    if (current.type === 'list') {
+      list = current
       return
     }
-    const children = 'children' in n && Array.isArray(n.children) ? n.children : []
-    for (const c of children) {
-      findList(c as Nodes)
+    const children = 'children' in current && Array.isArray(current.children) ? current.children : []
+    for (const child of children) {
+      findList(child as Nodes)
       if (list) return
     }
   }
   findList(node)
   if (!list) return []
-  const listChildren = 'children' in list && Array.isArray((list as Nodes & { children: Nodes[] }).children)
-    ? (list as Nodes & { children: Nodes[] }).children
-    : []
-  return listChildren.filter((c): c is Nodes => c != null && c.type === 'listItem')
+  const listNode = list as unknown as { children?: Nodes[] }
+  const children: Nodes[] = Array.isArray(listNode.children) ? listNode.children : []
+  return children.filter((child: Nodes): child is Nodes => child != null && child.type === 'listItem')
 }
 
-/**
- * listItem の「直下 paragraph」だけのテキストを取る（ネストした子リストは含めない）。
- * マーカー行の属性はこの直下テキストにある。
- */
+/** listItemの直下テキストだけを取り出す（ネストした写真リストは除外）。 */
 function directItemText(listItem: Nodes): string {
-  const children = 'children' in listItem && Array.isArray(listItem.children)
-    ? listItem.children
-    : []
+  const children = 'children' in listItem && Array.isArray(listItem.children) ? listItem.children : []
   let text = ''
-  for (const c of children) {
-    if (c && (c as Nodes).type === 'list') continue // 子リスト（写真）は除外
-    text += extractTextFromNode(c as Nodes)
+  for (const child of children) {
+    if (child && (child as Nodes).type === 'list') continue
+    text += extractTextFromNode(child as Nodes)
   }
   return text.trim()
 }
 
-/** listItem 内のネストした list の listItem 群（=写真行）を返す。 */
+/** listItem内のネストした写真リストのlistItem群を返す。 */
 function nestedPhotoItems(listItem: Nodes): Nodes[] {
-  const children = 'children' in listItem && Array.isArray(listItem.children)
-    ? listItem.children
-    : []
+  const children = 'children' in listItem && Array.isArray(listItem.children) ? listItem.children : []
   const out: Nodes[] = []
-  for (const c of children) {
-    if (c && (c as Nodes).type === 'list') {
-      const liChildren = 'children' in c && Array.isArray((c as Nodes & { children: Nodes[] }).children)
-        ? (c as Nodes & { children: Nodes[] }).children
-        : []
-      for (const li of liChildren) {
-        if (li && (li as Nodes).type === 'listItem') out.push(li as Nodes)
+  for (const child of children) {
+    if (child && (child as Nodes).type === 'list') {
+      const listChildren = 'children' in child && Array.isArray(child.children) ? child.children : []
+      for (const item of listChildren) {
+        if (item && (item as Nodes).type === 'listItem') out.push(item as Nodes)
       }
     }
   }
   return out
 }
 
-/**
- * `:::custom-map` コンテナディレクティブノードから MapData を構築する純関数。
- * コンテナ属性と、箇条書き（マーカー＋ネスト写真）を解釈する。
- */
+/** `:::custom-map` コンテナディレクティブからMapDataを構築する。 */
 export function buildMapData(node: ContainerDirective): MapData {
   const attributes = node.attributes ?? {}
   const attr = (key: string): string | undefined => {
-    const v = attributes[key]
-    return v == null ? undefined : v
+    const value = attributes[key]
+    return value == null ? undefined : value
   }
+  const baseFolderPath = attr('folder') || undefined
+  const mapAssetRef = makeAssetRef(entriesFromAttributes(attributes), baseFolderPath)
   const markers: MarkerData[] = []
 
-  const listItems = findTopLevelListItems(node as Nodes)
-  for (const listItem of listItems) {
-    const line = directItemText(listItem)
-    const marker = parseMarkerLine(line)
+  for (const listItem of findTopLevelListItems(node as Nodes)) {
+    const marker = parseMarkerLine(directItemText(listItem))
     if (!marker) continue
-    // ネストした子リスト行を写真として取り込む。子リストがあれば新方式なので、
-    // 旧記法互換で入れた「同一行 photo」の photos は子リスト側で上書きする。
-    const photoItems = nestedPhotoItems(listItem)
-    if (photoItems.length > 0) {
-      const photos: PhotoData[] = []
-      for (const pi of photoItems) {
-        const photo = parsePhotoLine(directItemText(pi))
-        if (photo) photos.push(photo)
-      }
-      marker.photos = photos
-    }
+    const photos = nestedPhotoItems(listItem)
+      .map((item) => parsePhotoLine(directItemText(item), baseFolderPath))
+      .filter((photo): photo is PhotoData => photo !== null)
+    marker.photos = photos
     markers.push(marker)
   }
 
   return {
-    file: attr('file') ?? '',
-    src: attr('src') ?? '',
+    assetRef: mapAssetRef,
     cx: toNumber(attr('cx'), 50),
     cy: toNumber(attr('cy'), 50),
     scale: toNumber(attr('scale'), 1),
@@ -190,11 +249,7 @@ export function buildMapData(node: ContainerDirective): MapData {
     rotate: normalizeRotate(toNumber(attr('rotate'), 0)),
     link: attr('link') ?? '',
     pinSize: clamp(toNumber(attr('pinSize'), PIN_SIZE_DEFAULT), PIN_SIZE_MIN, PIN_SIZE_MAX),
-    labelSize: clamp(
-      toNumber(attr('labelSize'), LABEL_SIZE_DEFAULT),
-      LABEL_SIZE_MIN,
-      LABEL_SIZE_MAX,
-    ),
+    labelSize: clamp(toNumber(attr('labelSize'), LABEL_SIZE_DEFAULT), LABEL_SIZE_MIN, LABEL_SIZE_MAX),
     markers,
   }
 }

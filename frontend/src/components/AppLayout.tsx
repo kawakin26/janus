@@ -40,6 +40,7 @@ function AppLayout({ children }: AppLayoutProps) {
             Janus
           </Link>
           <Link to="/">ページ一覧</Link>
+          <Link to="/assets">アセットライブラリ</Link>
         </nav>
         <div className={styles.account}>
           <span>{user.username}</span>

@@ -1,19 +1,7 @@
 // StorageClient 契約（design 4 章）とそれに連なる型定義。
-//
-// 方針（計画の確定判断に接地）:
-// - 型は backend の JSON レスポンス形に忠実な snake_case で定義し、
-//   RestClient 内で camelCase へ変換しない（変換層を作らない）。
-//   理由: 変換は全フィールド一貫で行う必要があり、フェーズ 1 の責務
-//   （契約の確立）に対して不要な複雑性とバグ面を増やすため。
-//   backend/api/serializers.py の実挙動（UserSerializer /
-//   PageSerializer / PageSummarySerializer / AssetSerializer）に一致させる。
-// - SearchClient はフェーズ 1 では契約のみ置き、RestClient の search() は
-//   未実装（throw）とする（要件 1-4, 11-4）。SearchHit は design に厳密な
-//   定義が無いため最小形で仮定義し、フェーズ 4 で確定する。
-// - interface 名・シグネチャ（引数名含む）は design 4 章に忠実。追加・改名はしない。
 
 // ---------------------------------------------------------------------------
-// データ型（backend JSON に忠実な snake_case）
+// データ型（backend JSON に忠実な snake_case/camelCase）
 // ---------------------------------------------------------------------------
 
 /** ユーザー表現（login / currentUser が返す）。UserSerializer に一致。 */
@@ -42,13 +30,35 @@ export interface PageSummary {
   title: string
 }
 
-/** アセット（添付）の表現。AssetSerializer に一致。 */
+/** 論理アセットフォルダ。FolderSerializer の parentId に一致。 */
+export interface Folder {
+  id: number
+  parentId: number | null
+  name: string
+  created_at: string
+  updated_at: string
+}
+
+/** 独立アセット。AssetSerializer の folderId に一致。 */
 export interface Asset {
   id: number
-  original_name: string
+  folderId: number | null
+  filename: string
+  alias: string
   url: string
   content_type: string
   created_at: string
+  updated_at: string
+}
+
+export type AssetSpecifier =
+  | { kind: 'filename'; value: string }
+  | { kind: 'alias'; value: string }
+
+/** 基準フォルダと、記法中の出現順を保持したアセット参照。 */
+export interface AssetRef {
+  baseFolderPath?: string
+  specifiers: AssetSpecifier[]
 }
 
 /**
@@ -81,14 +91,18 @@ export interface PageClient {
   deletePage(path: string): Promise<void>
 }
 
-/** アセット契約。 */
+/** 独立アセットライブラリ契約。 */
 export interface AssetClient {
-  listAssets(pagePath: string): Promise<Asset[]>
-  uploadAsset(pagePath: string, file: File): Promise<Asset>
-  resolveAssetUrl(
-    originalName: string,
-    candidatePagePaths: string[],
-  ): Promise<string | null>
+  listFolders(parentFolderId: number | null): Promise<Folder[]>
+  createFolder(input: { parentId: number | null; name: string }): Promise<Folder>
+  listAssets(folderId: number | null): Promise<Asset[]>
+  uploadAsset(input: { folderId: number | null; file: File; alias?: string }): Promise<Asset>
+  moveAsset(assetId: number, toFolderId: number | null): Promise<Asset>
+  /** 認証付きでAsset.fileを取得し、ブラウザで表示できる一時URLを返す。 */
+  getAssetFileUrl(asset: Asset): Promise<string>
+  /** getAssetFileUrlが返した一時URLの所有権を解放する。 */
+  releaseAssetFileUrl(url: string): void
+  resolveAssetUrl(ref: AssetRef): Promise<string | null>
 }
 
 /** 検索契約（フェーズ 4 で実装。フェーズ 1 では契約のみ）。 */
@@ -107,11 +121,7 @@ export interface StorageClient
 // エラー型（design 9 章）
 // ---------------------------------------------------------------------------
 
-/**
- * API エラーを表す例外。RestClient が非 2xx レスポンスをこの例外へ変換する。
- * status を保持することで呼び出し側（UI 層）が 409 / 404 / 401 等を判別できる。
- * detail は backend の DRF エラー本文 { detail } を拾ったもの（無ければ undefined）。
- */
+/** RestClient が非 2xx レスポンスを変換するAPIエラー。 */
 export class ApiError extends Error {
   readonly status: number
   readonly detail?: string

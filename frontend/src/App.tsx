@@ -4,6 +4,7 @@ import PageViewPage from './pages/PageViewPage'
 import PageEditPage from './pages/PageEditPage'
 import LoginPage from './pages/LoginPage'
 import NotFoundPage from './pages/NotFoundPage'
+import AssetLibraryPage from './pages/AssetLibraryPage'
 import { RequireAuth } from './auth/RequireAuth'
 
 // ルート骨組み（要件 2-6）。
@@ -34,6 +35,14 @@ function App() {
         element={
           <RequireAuth>
             <PageEditPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/assets"
+        element={
+          <RequireAuth>
+            <AssetLibraryPage />
           </RequireAuth>
         }
       />

@@ -27,14 +27,42 @@ backend と frontend を 1 リポジトリに同居させています。フェ�
 
 ## 開発段階（フェーズ）
 
-- **フェーズ 1**（完了）: サーバーモードの基盤。ページ CRUD、Markdown 表示、地図記法の表示、アセット（添付）管理、認証・ユーザー管理、統一 API 契約の定義。
+- **フェーズ 1**（完了）: サーバーモードの基盤。ページ CRUD、Markdown 表示、地図記法の表示、独立アセットライブラリ、認証・ユーザー管理、統一 API 契約の定義。
 - **フェーズ 2**: 権限管理、リビジョン機能。
 - **フェーズ 3**: コメント / メモ、draw.io 描画、CAD 自動変換、ローカルモード（PWA + IndexedDB）、地図 GUI 編集・現場写真添付。
 - **フェーズ 4**: 全文検索（ローカル N-gram / サーバー FTS5）。
 
 詳細は [`.kiro/specs/janus-foundation/`](.kiro/specs/janus-foundation/) を参照してください。
 
-## セットアップ
+## 地図記法と独立アセット参照
+
+アセットはページ添付ではなく、フォルダ階層を持つ独立ライブラリへ登録します。`filename`（短縮形 `file`）はファイル名、`aliasname`（短縮形 `alias`）は登録名を参照します。複数の指定子は記法上の出現順に解決され、先の指定子が見つからない場合に次を試します。`folder` は基準フォルダで、指定子の値に `/` が含まれる場合は基準フォルダからの相対パス、先頭が `/` の場合はルートからの絶対パスとして扱います。
+
+```markdown
+:::custom-map{folder="本館/2F" filename="floor.svg" aliasname="floor-plan" link="現場図面を開く"}
+
+- x=18 y=26 label="入口" desc="受付"
+  - alias="entrance.jpg" desc="入口写真"
+
+:::
+```
+
+`filename` と `aliasname` の両方を指定した場合も、先に書いた指定子が優先されます。ファイル名または登録名が解決できない場合は、ビューアに「マップ/画像が見つかりません」と表示します。
+
+### アセットライブラリ（フェーズ 1）
+
+`/assets` はページから独立したアセット管理画面です。フォルダ直下の一覧、フォルダ作成、ファイル選択によるアップロード、alias の登録、返却 URL の確認を行えます。画面は `StorageClient` 契約だけを利用し、REST の具体実装には依存しません。
+
+REST API の例:
+
+```text
+GET  /api/folders?parent=<folder-id>
+GET  /api/assets?folder=<folder-id>
+POST /api/folders              {"name":"本館","parentId":null}
+POST /api/assets?folder=<folder-id>  multipart: file, alias
+```
+
+物理ファイルは不透明な ID でフラットに保存し、フォルダの親子関係と filename/alias はデータベースで管理します。将来のエクスポート時に DB の階層から論理ツリーを生成します。CAD から SVG への変換と GUI によるアセット移動はフェーズ 3 の境界であり、フェーズ 1 の画面には含めません。
 
 サーバーモードは backend（API）と frontend（UI）の 2 プロセスで開発します。最小構成では backend は Python 1 プロセス + SQLite 1 ファイルで動き、root 不要・上位ポートで待受できます。
 

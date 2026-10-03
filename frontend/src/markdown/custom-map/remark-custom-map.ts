@@ -3,7 +3,7 @@
 // 方針（計画 D3）:
 // - remark-directive の後・remark-directive-fallback の前に差し込む。
 // - containerDirective かつ name==='custom-map' のノードを buildMapData で MapData 化し、
-//   data.hName='div' / data.hProperties に data-custom-map（MapData の JSON）と
+//   data.hName='div' / data.hProperties に data-custom-map（AssetRef を含む MapData の JSON）と
 //   data-directive='custom-map' を設定、子を空にする。
 // - fallback は hName 既設を尊重するため custom-map には触れない（他ディレクティブ向けは残る）。
 // - react-markdown の components.div 側で data-custom-map を検出し CustomMapViewer を描画する。
