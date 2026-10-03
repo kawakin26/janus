@@ -99,25 +99,25 @@
 
 ## バックエンド: リビジョン機能（権限ゲートの上に乗せる）
 
-- [ ] 12. 保存の単一経路 `save_page_body` とページ系ビューへの接続
+- [x] 12. 保存の単一経路 `save_page_body` とページ系ビューへの接続
   - `api/services.py` を新規作成し、`save_page_body(page_or_path, *, title, body, author) -> (page, created_revision_bool)` を実装する（design 6.1）。`transaction.atomic()` 内で作成（POST）/更新（PUT/restore）を分岐: 作成は `Page.objects.create(..., created_by=author, updated_by=author)`（path 重複は `IntegrityError`→409 相当）、更新/復元は `select_for_update().get(path=path)` で行ロックし `created_by` は保持・`updated_by` のみ更新。最新リビジョン body と新 body が一致なら新リビジョンを作らず（本文不変は `Page.save()` も呼ばず `updated_at` を動かさない、タイトルのみ変更は `Page.title` 更新・リビジョン作らず）、変化ありなら `number=(最新 or 0)+1` で `Revision` を作成し `Page.body/title/updated_by` を更新する。新規作成は必ず `number=1` の初回リビジョンを作る（design 6.2）。`PageDetailView` の POST/PUT と（タスク 14 の）restore がこの関数を経由するよう `views.py` を接続する。
   - ファイル: `backend/api/services.py`, `backend/api/views.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py test api`（既存 `tests_pages.py` が全合格し続ける＋次タスクでリビジョン記録を検証）。
   - _要件: P2-8-1, P2-8-4, P2-8-5, P2-8-6, P2-9-1, P2-9-2, P2-9-3, P2-9-4, P2-11-2, P2-11-3_
 
-- [ ] 13. 初期リビジョンのバックフィル・データマイグレーション
+- [x] 13. 初期リビジョンのバックフィル・データマイグレーション
   - `backend/api/migrations/0004_backfill_initial_revisions.py` を `RunPython` で新規作成する（design 7 章）。既存全ページに `number=1` の初回リビジョンを作る（body=`Page.body`、title=`Page.title`、author=`Page.updated_by`（null 可）、`created_at`=`Page.updated_at`）。`apps.get_model('api','Revision')` のヒストリカルモデルで `created_at` を直接明示代入する。本文空ページも対象。`Revision.objects.filter(page=page).exists()` ガードで**冪等**（再 migrate で二重作成しない）。reverse 関数で作成分を削除する。
   - ファイル: `backend/api/migrations/0004_backfill_initial_revisions.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py migrate`（既存 db.sqlite3 の全ページに初回リビジョンが付与される）→ 再度 `../.venv/bin/python manage.py migrate`（冪等・差分なし）→ `../.venv/bin/python manage.py test api`。マイグレーション後のデータ検証テストを `tests_revisions.py` に追加する。
   - _要件: P2-8-4, P2-15-2, 統合受入 22_
 
-- [ ] 14. リビジョン API（一覧 / 1 件取得 / 差分 / 復元）とシリアライザ
+- [x] 14. リビジョン API（一覧 / 1 件取得 / 差分 / 復元）とシリアライザ
   - `api/serializers.py` に `RevisionSummarySerializer`（`id, number, created_at, author`。本文なし）と `RevisionSerializer`（`+ body, title`）を追加する。`api/views.py` に `RevisionListView`（GET `?path=&limit=&offset=`、`order_by("-number")`、limit 既定 50・上限 200・不正値は既定へフォールバック）、`RevisionDetailView`（GET `?path=&number=`）、`RevisionDiffView`（GET `?path=&from=&to=`、`from` は `request.query_params.get("from")` で取り変数名は `from_num`/`to_num`、`difflib.SequenceMatcher(None, a, b).get_opcodes()` で `[{op:"add"|"del"|"equal", line}]` に展開、replace は del 群+add 群に分解）、`RevisionRestoreView`（POST body `{path, number}`、`save_page_body` 経由で復元）を追加する。指定子はすべて `number`（PK は使わない）、照合は `filter(page=page, number=n)`。一覧/取得/差分は view、復元は edit を要求し、いずれも「権限 → 存在」順（権限拒否は既定 403／秘匿時 404、通過後に `number` 不在/別ページで 404）。`api/urls.py` に `pages/revisions`・`pages/revisions/detail`・`pages/revisions/diff`・`pages/revisions/restore` を追加する（design 5.5・5.6）。
   - ファイル: `backend/api/serializers.py`, `backend/api/views.py`, `backend/api/urls.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py check` 成功、`../.venv/bin/python manage.py test api`（次タスクのテストで網羅）。
   - _要件: P2-10, P2-11, P2-13-2, P2-13-4_
 
-- [ ] 15. リビジョン機能の統合テスト
+- [x] 15. リビジョン機能の統合テスト
   - `api/tests_revisions.py` に `APITestCase` で検証を追加する: 保存で全文スナップショットが 1 件記録され `Page.body` が最新リビジョンと一致、本文不変で増えない、新規作成で初回リビジョン 1 件、履歴一覧が新しい順＋ページング（limit/offset）、diff が行単位（`get_opcodes` の replace が del+add に分解、存在しない `number`・別ページの `number` は 404）、復元が過去本文を新リビジョン化し過去を消さない、復元 no-op 成功、restore の判定順序（権限 → 存在・秘匿時 404）、作者削除で author null 化・履歴残存、ページ削除で連動削除、同時 POST 競合で 409。view/edit 権限ゲート（履歴は view、復元は edit）も検証する。
   - ファイル: `backend/api/tests_revisions.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py test api` が全て合格する。

@@ -1,5 +1,6 @@
 """API ビュー（認証・ページ・独立アセットライブラリ）。"""
 
+import difflib
 import os
 
 from django.db import IntegrityError, transaction
@@ -13,7 +14,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Asset, Folder, Page, PagePermission
+from .models import Asset, Folder, Page, PagePermission, Revision
 from .permissions import (
     PERMISSION_ENTRY_NOT_FOUND_DETAIL,
     compute_view_edit,
@@ -26,8 +27,11 @@ from .serializers import (
     PagePermissionSerializer,
     PageSerializer,
     PageSummarySerializer,
+    RevisionSerializer,
+    RevisionSummarySerializer,
     UserSerializer,
 )
+from .services import PathConflictError, save_page_body
 from .utils import normalize_path
 
 
@@ -92,14 +96,13 @@ class PageDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
         try:
-            page = Page.objects.create(
-                path=path,
+            page, _created = save_page_body(
+                path,
                 title=validated.get("title", ""),
                 body=validated.get("body", ""),
-                created_by=request.user,
-                updated_by=request.user,
+                author=request.user,
             )
-        except IntegrityError:
+        except (PathConflictError, IntegrityError):
             return Response({"detail": DUPLICATE_PATH_DETAIL}, status=status.HTTP_409_CONFLICT)
         return Response(PageSerializer(page).data, status=status.HTTP_201_CREATED)
 
@@ -115,12 +118,12 @@ class PageDetailView(APIView):
         serializer = PageSerializer(page, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
-        if "title" in validated:
-            page.title = validated["title"]
-        if "body" in validated:
-            page.body = validated["body"]
-        page.updated_by = request.user
-        page.save()
+        # 未指定フィールドは既存値を渡し、部分更新 + 本文/タイトル不変抑制を両立する。
+        title = validated["title"] if "title" in validated else page.title
+        body = validated["body"] if "body" in validated else page.body
+        page, _created = save_page_body(
+            page, title=title, body=body, author=request.user
+        )
         return Response(PageSerializer(page).data, status=status.HTTP_200_OK)
 
     def delete(self, request, *args, **kwargs):
@@ -242,6 +245,170 @@ class PageEffectivePermissionView(APIView):
     def get(self, request, *args, **kwargs):
         path = normalize_path(request.query_params.get("path"))
         return Response(compute_view_edit(request, path), status=status.HTTP_200_OK)
+
+
+REVISION_NOT_FOUND_DETAIL = "指定されたリビジョンが見つかりません。"
+REVISION_LIMIT_DEFAULT = 50
+REVISION_LIMIT_MAX = 200
+
+
+def _revision_limit(value):
+    """limit を既定 50・上限 200 でクランプ。不正値は既定へフォールバック（design 9.1）。"""
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return REVISION_LIMIT_DEFAULT
+    if limit < 1:
+        return REVISION_LIMIT_DEFAULT
+    return min(limit, REVISION_LIMIT_MAX)
+
+
+def _revision_offset(value):
+    """offset を既定 0。不正値・負値は 0 へフォールバック（design 9.1）。"""
+    try:
+        offset = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return offset if offset >= 0 else 0
+
+
+def _revision_number(value):
+    """number の整数化。非整数は None（呼び出し側で 404 に落とす・design 5.5）。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+class RevisionListView(APIView):
+    """ページ履歴一覧（新しい順・ページング・軽量メタ、design 5.5）。view 権限。"""
+
+    def get(self, request, *args, **kwargs):
+        path = normalize_path(request.query_params.get("path"))
+        # 権限 → 存在の順（design 5.5）。view 拒否は実在を参照せず 403/404。
+        denied = require_page_permission(request, path, "view")
+        if denied is not None:
+            return denied
+        page = Page.objects.filter(path=path).first()
+        if page is None:
+            return Response({"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND)
+        limit = _revision_limit(request.query_params.get("limit"))
+        offset = _revision_offset(request.query_params.get("offset"))
+        revisions = page.revisions.order_by("-number")[offset:offset + limit]
+        return Response(
+            RevisionSummarySerializer(revisions, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class RevisionDetailView(APIView):
+    """リビジョン 1 件の本文取得（design 5.5）。view 権限。指定子は number。"""
+
+    def get(self, request, *args, **kwargs):
+        path = normalize_path(request.query_params.get("path"))
+        denied = require_page_permission(request, path, "view")
+        if denied is not None:
+            return denied
+        page = Page.objects.filter(path=path).first()
+        if page is None:
+            return Response({"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND)
+        number = _revision_number(request.query_params.get("number"))
+        revision = (
+            Revision.objects.filter(page=page, number=number).first()
+            if number is not None
+            else None
+        )
+        if revision is None:
+            return Response(
+                {"detail": REVISION_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND
+            )
+        return Response(RevisionSerializer(revision).data, status=status.HTTP_200_OK)
+
+
+class RevisionDiffView(APIView):
+    """2 リビジョンの行単位差分（design 5.5）。view 権限。指定子は number。"""
+
+    def get(self, request, *args, **kwargs):
+        path = normalize_path(request.query_params.get("path"))
+        denied = require_page_permission(request, path, "view")
+        if denied is not None:
+            return denied
+        page = Page.objects.filter(path=path).first()
+        if page is None:
+            return Response({"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND)
+        # from は Python 予約語のため query_params.get("from") で取得し from_num に束縛。
+        from_num = _revision_number(request.query_params.get("from"))
+        to_num = _revision_number(request.query_params.get("to"))
+        from_rev = (
+            Revision.objects.filter(page=page, number=from_num).first()
+            if from_num is not None
+            else None
+        )
+        to_rev = (
+            Revision.objects.filter(page=page, number=to_num).first()
+            if to_num is not None
+            else None
+        )
+        if from_rev is None or to_rev is None:
+            return Response(
+                {"detail": REVISION_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND
+            )
+        diff = _diff_lines(from_rev.body, to_rev.body)
+        return Response(diff, status=status.HTTP_200_OK)
+
+
+def _diff_lines(a_body, b_body):
+    """行単位差分を [{op, line}] に展開（design 5.5）。replace は del 群+add 群に分解。"""
+    a_lines = a_body.splitlines()
+    b_lines = b_body.splitlines()
+    result = []
+    matcher = difflib.SequenceMatcher(None, a_lines, b_lines)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for line in a_lines[i1:i2]:
+                result.append({"op": "equal", "line": line})
+        elif tag == "delete":
+            for line in a_lines[i1:i2]:
+                result.append({"op": "del", "line": line})
+        elif tag == "insert":
+            for line in b_lines[j1:j2]:
+                result.append({"op": "add", "line": line})
+        elif tag == "replace":
+            # replace は削除行群（del）→追加行群（add）に分解（op:"change" は使わない）。
+            for line in a_lines[i1:i2]:
+                result.append({"op": "del", "line": line})
+            for line in b_lines[j1:j2]:
+                result.append({"op": "add", "line": line})
+    return result
+
+
+class RevisionRestoreView(APIView):
+    """指定リビジョンへ復元（新リビジョン化、design 5.5）。edit 権限。"""
+
+    def post(self, request, *args, **kwargs):
+        path = normalize_path(request.data.get("path"))
+        # restore の判定順序（design 5.5）: (1) Page 取得・不在 404 →
+        # (2) edit 権限（403/404）→ (3) number 存在（404）→ (4) save_page_body。
+        page = Page.objects.filter(path=path).first()
+        if page is None:
+            return Response({"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND)
+        denied = require_page_permission(request, path, "edit")
+        if denied is not None:
+            return denied
+        number = _revision_number(request.data.get("number"))
+        revision = (
+            Revision.objects.filter(page=page, number=number).first()
+            if number is not None
+            else None
+        )
+        if revision is None:
+            return Response(
+                {"detail": REVISION_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND
+            )
+        page, _created = save_page_body(
+            page, title=revision.title, body=revision.body, author=request.user
+        )
+        return Response(PageSerializer(page).data, status=status.HTTP_200_OK)
 
 
 ASSET_NOT_FOUND_DETAIL = "指定されたアセットが見つかりません。"

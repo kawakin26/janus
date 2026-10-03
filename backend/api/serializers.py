@@ -5,7 +5,7 @@ from django.contrib.auth.models import Group
 from django.urls import reverse
 from rest_framework import serializers
 
-from .models import Asset, Folder, Page, PagePermission
+from .models import Asset, Folder, Page, PagePermission, Revision
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -50,6 +50,28 @@ class PageSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Page
         fields = ["path", "title"]
+        read_only_fields = fields
+
+
+class RevisionSummarySerializer(serializers.ModelSerializer):
+    """履歴一覧の軽量表現（design 5.5）。body/title を含めない。"""
+
+    author = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Revision
+        fields = ["id", "number", "created_at", "author"]
+        read_only_fields = fields
+
+
+class RevisionSerializer(serializers.ModelSerializer):
+    """リビジョン 1 件の詳細表現（design 5.5）。本文・タイトルを含む。"""
+
+    author = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Revision
+        fields = ["id", "number", "created_at", "author", "body", "title"]
         read_only_fields = fields
 
 

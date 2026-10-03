@@ -26,6 +26,26 @@ urlpatterns = [
         views.PageEffectivePermissionView.as_view(),
         name="pages-effective-permission",
     ),
+    path(
+        "pages/revisions/detail",
+        views.RevisionDetailView.as_view(),
+        name="pages-revisions-detail",
+    ),
+    path(
+        "pages/revisions/diff",
+        views.RevisionDiffView.as_view(),
+        name="pages-revisions-diff",
+    ),
+    path(
+        "pages/revisions/restore",
+        views.RevisionRestoreView.as_view(),
+        name="pages-revisions-restore",
+    ),
+    path(
+        "pages/revisions",
+        views.RevisionListView.as_view(),
+        name="pages-revisions",
+    ),
     path("pages", views.PageDetailView.as_view(), name="pages"),
     path("folders", views.FolderListCreateView.as_view(), name="folders"),
     path("assets", views.AssetListCreateView.as_view(), name="assets"),
