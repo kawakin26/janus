@@ -155,7 +155,7 @@
 
 ## 統合・回帰（最終確認）
 
-- [ ] 20. フェーズ 2 全体の統合・回帰確認
+- [x] 20. フェーズ 2 全体の統合・回帰確認
   - バックエンド全テスト回帰: `backend/` で `../.venv/bin/python manage.py test`（既存 `tests.py`/`tests_auth.py`/`tests_pages.py`/`tests_assets.py`/`tests_integration.py` が全合格し続ける＝デフォルトポリシー既定で期待値不変、要件 P2-15-4）＋ 新規 `tests_permissions.py`/`tests_revisions.py` が全合格。`makemigrations --check --dry-run`（未生成差分なし）・`migrate`（SQLite で成立、要件 P2-16-1）・`check` を通す。
   - フロントエンド: `frontend/` で `npx tsc --noEmit` → `npm run test:run` → `npm run build` → `npm run lint` を通す。
   - 権限マトリクス（view/edit・継承・Allow/Deny・superuser・デフォルト）、履歴/差分/復元、アセット非干渉がテストで検証済みであることを確認する。SQLite で全成立することを明記する。
