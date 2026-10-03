@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from .models import Asset, Folder, Page
+from .models import Asset, Folder, Page, PagePermission, Revision
 
 
 @admin.register(Page)
@@ -18,3 +18,13 @@ class FolderAdmin(admin.ModelAdmin):
 @admin.register(Asset)
 class AssetAdmin(admin.ModelAdmin):
     list_display = ("filename", "alias", "folder", "content_type", "created_at")
+
+
+@admin.register(PagePermission)
+class PagePermissionAdmin(admin.ModelAdmin):
+    list_display = ("path", "principal_type", "user", "group", "action", "effect")
+
+
+@admin.register(Revision)
+class RevisionAdmin(admin.ModelAdmin):
+    list_display = ("page", "number", "created_at", "author")

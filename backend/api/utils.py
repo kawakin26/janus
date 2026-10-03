@@ -49,3 +49,38 @@ def normalize_path(raw: str | None) -> str:
 
     # 3-4. 先頭 "/" を付け、末尾 "/" は付けない。
     return "/" + "/".join(segments)
+
+
+def ancestor_paths(path: str) -> list[str]:
+    """正規化済み path の祖先パス列を、自身を含め近い順に返す。
+
+    導出規則（design.md 3.4 章「祖先パスの導出」・権限合成の階層的近さ
+    （3.2 ステップ 3）に基づく）:
+
+    1. 前提: 入力は normalize_path 済みの絶対パス（先頭 "/"・末尾 "/" なし）。
+       DB 固有機能に依存しない純粋な文字列処理のみを行う。
+    2. 分解: path を "/" で分割し、空セグメント（ルート由来）を落として
+       セグメント列を得る（normalize_path と同じ分解観点）。
+    3. 構築: 自身（最も長い＝最も近い）から順に末尾セグメントを 1 つずつ
+       削り、各段の絶対パスを近い順に並べる。最後に必ずルート "/" を
+       最遠の祖先として付与する。
+    4. ルート境界: path が "/"（ルート自身）の場合はセグメントが 0 個のため、
+       ルートは自身のみを祖先に持つ正規値として ["/"] を返す（NIT-1）。
+
+    例:
+      - ancestor_paths("/docs/intro") == ["/docs/intro", "/docs", "/"]
+      - ancestor_paths("/docs") == ["/docs", "/"]
+      - ancestor_paths("/") == ["/"]
+    """
+    # 2. "/" 分割し、空セグメント（先頭 "/" やルート由来）を落とす。
+    segments = [segment for segment in path.split("/") if segment]
+
+    # 3. 自身から順に末尾を削り、近い順の絶対パス列を作る。
+    ancestors = [
+        "/" + "/".join(segments[:depth])
+        for depth in range(len(segments), 0, -1)
+    ]
+
+    # 3-4. 最遠の祖先として常にルートを付ける（ルート自身なら ["/"] のみ）。
+    ancestors.append("/")
+    return ancestors

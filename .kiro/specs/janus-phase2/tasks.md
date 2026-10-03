@@ -26,20 +26,20 @@
 
 ## バックエンド: 権限管理（先行。認可ゲートがページ系ビュー改修の土台になり、保存経路改修の前提にもなる）
 
-- [ ] 1. 権限判定の純粋関数と祖先パス導出
+- [x] 1. 権限判定の純粋関数と祖先パス導出
   - `api/utils.py` に `ancestor_paths(path: str) -> list[str]` を純粋関数として追加する（`normalize_path` の隣）。近い順に自身を含む祖先列を返し、`ancestor_paths("/") == ["/"]`（ルートは自身のみ）を満たす（design 3.4）。
   - `api/permissions_logic.py` を新規作成し、`PermEntry` 軽量 dataclass（`path, principal_type, principal_id, action, effect`）と純粋関数 `effective_permission(*, path, action, user, entries, default_allow, default_edit_allow) -> bool`、補助関数 `resolve_subject_level(subject_entries, action) -> bool | None` を実装する。合成順序は design 3.2 の擬似コードに厳密に従う（管理者バイパス → view 明示 > edit allow 含意 → 階層的近さ → user 直接 > group → deny 優先 → デフォルト委任時の edit→view 含意）。DB・リクエストに依存しない純粋関数とする。
   - ファイル: `backend/api/utils.py`, `backend/api/permissions_logic.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py check` が成功する（次タスクでユニットテストを追加）。
   - _要件: P2-1-4, P2-1-5, P2-2, P2-3-5, P2-4, P2-16-2, P2-16-3_
 
-- [ ] 2. 権限判定ロジックのユニットテスト（真理値表の固定）
+- [x] 2. 権限判定ロジックのユニットテスト（真理値表の固定）
   - `api/tests_permissions.py` を新規作成し、`SimpleTestCase`（DB 非依存）で `effective_permission` を検証する。design 3.3 の真理値表 #1〜#10（view-deny+edit-allow、edit-allow-only、edit-deny-only を含む）を `default_allow` 真偽の両方で網羅し、3.3.1 の D1〜D4（特に `JANUS_DEFAULT_PAGE_VIEW=False` かつ `JANUS_DEFAULT_PAGE_EDIT=True` で view=allow）を固定する。管理者バイパス、deny 優先、近いレベル優先、user>group、グループ経由エントリの `principal_id` 変換（3.5 の `principal_id = user_id if type=="user" else group_id`）を個別に検証する。`ancestor_paths`（`"/"` の境界含む）のユニットテストも追加する。
   - ファイル: `backend/api/tests_permissions.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py test api.tests_permissions` が全て合格する。
   - _要件: P2-1-4, P2-2, P2-3, P2-4, 統合受入 6,7,8,9_
 
-- [ ] 3. PagePermission / Revision モデルとスキーマ・マイグレーション・admin
+- [x] 3. PagePermission / Revision モデルとスキーマ・マイグレーション・admin
   - `api/models.py` に `PagePermission`（design 2.1: `path` 文字列・`principal_type`・`user`/`group`（CASCADE）・`action`・`effect`・監査日時、部分 `UniqueConstraint` `pageperm_user_unique`/`pageperm_group_unique`、user/group 整合の `clean()`）と `Revision`（design 2.2: `page`（CASCADE）・`number`・`body`・`title`・`created_at`（`auto_now_add` を使わず明示代入可）・`author`（SET_NULL）、`revision_page_number_unique`、`Meta.ordering=["-number"]`、`(page, number)` 複合インデックス）を追加する。既存 `Page`/`Folder`/`Asset` は一切変更しない。
   - `api/admin.py` に `PagePermission`/`Revision` を登録する（既存 `admin.py` の `list_display` 流儀）。
   - スキーマ用マイグレーション `backend/api/migrations/0003_phase2_permissions_revisions.py` を生成する（既存 `0001`/`0002` は変更しない）。
@@ -47,49 +47,49 @@
   - 検証: `backend/` で `../.venv/bin/python manage.py makemigrations --check --dry-run`（未生成差分なし）→ `../.venv/bin/python manage.py migrate`（既存 db.sqlite3 に適用成功、既存データ保持）→ `../.venv/bin/python manage.py check` が成功する。
   - _要件: P2-1-1, P2-1-2, P2-8-2, P2-12-1, P2-12-2, P2-15-1_
 
-- [ ] 4. モデルの単体テスト（制約・整合・連動削除）
+- [x] 4. モデルの単体テスト（制約・整合・連動削除）
   - `api/tests_permissions.py`（または新規 `api/tests_revisions.py`）に `APITestCase`/`TestCase` でモデル検証を追加する: `PagePermission` の (path,主体,action) 部分一意制約が重複登録を弾くこと、user/group 整合の `clean()`、`Revision` の `(page, number)` 一意制約、`Meta.ordering=["-number"]`、ページ削除で Revision が CASCADE 連動削除されること、author ユーザー削除で Revision が残り author が null 化すること（SET_NULL）。
   - ファイル: `backend/api/tests_revisions.py`（新規）または `backend/api/tests_permissions.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py test api` が全て合格する。
   - _要件: P2-1-2, P2-12-1, P2-12-2, 統合受入 17,18_
 
-- [ ] 5. デフォルトポリシー・存在秘匿フラグの設定追加
+- [x] 5. デフォルトポリシー・存在秘匿フラグの設定追加
   - `backend/janus/settings.py` に `env_bool` で `JANUS_DEFAULT_PAGE_VIEW`（既定 True）・`JANUS_DEFAULT_PAGE_EDIT`（既定 True）・`JANUS_HIDE_FORBIDDEN`（既定 False）を追加する（既存 `JANUS_REQUIRE_AUTH` と同じ流儀）。既定値はすべてフェーズ 1 挙動を保つ（design 4 章、要件 P2-3-2・P2-7-2）。`DEFAULT_PERMISSION_CLASSES` 等の既存 REST_FRAMEWORK 設定は変えない。
   - ファイル: `backend/janus/settings.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py check` が成功し、既存テスト `../.venv/bin/python manage.py test api` が引き続き全合格する（既定値で挙動不変）。
   - _要件: P2-3-1, P2-3-2, P2-7-1, P2-7-2_
 
-- [ ] 6. 認可ゲート `require_page_permission` ヘルパ
+- [x] 6. 認可ゲート `require_page_permission` ヘルパ
   - `api/permissions.py` を新規作成し、`require_page_permission(request, path, action) -> Response | None` を実装する（design 5.1）。候補エントリを 3.5 の方式で一括取得して `PermEntry` へ変換（`principal_id = user_id if "user" else group_id`）し、`effective_permission` を呼ぶ（`default_allow` は action に応じ `JANUS_DEFAULT_PAGE_VIEW`/`JANUS_DEFAULT_PAGE_EDIT`、`default_edit_allow` は常に `JANUS_DEFAULT_PAGE_EDIT`）。許可なら `None`、拒否なら既定 403／`JANUS_HIDE_FORBIDDEN=True` で 404（本文・メタを含めない固定 detail）。**ページ実在は参照しない**。匿名ユーザー（`request.user.is_authenticated` が偽）は `effective_permission` を呼ばずデフォルトポリシーのみで判定する（design 5.1「匿名ユーザーの扱い」）。固定 detail 文言 `PERMISSION_ENTRY_NOT_FOUND_DETAIL` 等の定数もここか `views.py` に定義する。
   - ファイル: `backend/api/permissions.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py check` が成功する（API テストはタスク 8 以降で網羅）。
   - _要件: P2-5-1, P2-5-2, P2-6-1, P2-7-3, P2-7-4_
 
-- [ ] 7. 権限エントリのシリアライザ
+- [x] 7. 権限エントリのシリアライザ
   - `api/serializers.py` に `PagePermissionSerializer` を追加する（既存 `FolderSerializer` の `parentId`→`parent` 流儀）。入力 `{path, principalType, principalId, action, effect}`（camelCase）を受け、`principalType=="user"` なら `user_id=principalId`・`group=None`・`principal_type="user"`、`"group"` なら `group_id=principalId`・`user=None`・`principal_type="group"` にマップする。`principalType` が enum 外／`principalId` が指す user/group が実在しなければ 400。出力は逆射影（非 null 側 FK を `principalId`、`principal_type` を `principalType`）。PATCH 用に `effect` のみ書込可（他フィールドは受理しても無視）とできる形にする（design 5.3、9.1）。
   - ファイル: `backend/api/serializers.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py check` が成功する。
   - _要件: P2-1-2, P2-13-3_
 
-- [ ] 8. 権限管理 API（一覧 / 付与 / 更新 / 取消）
+- [x] 8. 権限管理 API（一覧 / 付与 / 更新 / 取消）
   - `api/views.py` に `PagePermissionView`（GET/POST）と `PagePermissionDetailView`（PATCH/DELETE）を追加する（既存 APIView 流儀）。GET `/api/pages/permissions?path=` は先に `require_page_permission(request, path, "edit")` を評価し拒否なら 403/404、通過後に当該 path のエントリ一覧（0 件は空配列・200）を返す。POST は重複 (path,主体,action) を `IntegrityError`→409（既存アセットの try/`transaction.atomic`/409 流儀）。PATCH は `<id>` 取得（無ければ 404 固定 detail）→ `entry.path` の edit 判定 → `effect` のみ更新（主体・対象・操作変更は DELETE+POST）。DELETE は同順序でエントリ削除（design 5.3）。`api/urls.py` に `pages/permissions`・`pages/permissions/<int:pk>` を既存の「深いものを先に」流儀で追加する（design 5.6）。
   - ファイル: `backend/api/views.py`, `backend/api/urls.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py test api`（次タスクのテスト追加後に権限管理ケースが合格）。本タスク時点では `../.venv/bin/python manage.py check` 成功を確認する。
   - _要件: P2-1-3, P2-1-6, P2-5-6, P2-13-4_
 
-- [ ] 9. 実効権限問い合わせ API
+- [x] 9. 実効権限問い合わせ API
   - `api/views.py` に `PageEffectivePermissionView`（GET `/api/pages/effective-permission?path=`）を追加し、現在ユーザーの当該 path に対する `{view: bool, edit: bool}` を返す（design 5.4）。未認証は既存 `DEFAULT_PERMISSION_CLASSES`（`IsAuthenticated`）で 401。認証済みは任意 path を問い合わせ可で、権限不足でも 403/404 を返さず常に 200 + `{view, edit}`（存在秘匿運用でも `{false,false}` で path 存在を漏らさない）。`api/urls.py` に `pages/effective-permission` を追加する。
   - ファイル: `backend/api/views.py`, `backend/api/urls.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py check` が成功する（API テストはタスク 11）。
   - _要件: P2-13-3, P2-6-1, P2-7_
 
-- [ ] 10. ページ系ビューへの権限ゲート適用（GET / children / PUT / DELETE / POST）
+- [x] 10. ページ系ビューへの権限ゲート適用（GET / children / PUT / DELETE / POST）
   - `api/views.py` の `PageDetailView`・`PageChildrenView` にレスポンス形状を変えずに権限ゲートを追加する（design 5.2）。GET は「権限 → 存在」順（`require_page_permission(..,"view")` 拒否で 403/404、通過後に Page 不在で 404）。PUT/DELETE も「権限（edit）→ 存在」順。POST は作成予定の正規化 path をそのまま `effective_permission(path=new_path, action="edit", default_allow=JANUS_DEFAULT_PAGE_EDIT, default_edit_allow=JANUS_DEFAULT_PAGE_EDIT)` で評価し、**edit 拒否は `JANUS_HIDE_FORBIDDEN` に関わらず常に 403**（design 3「POST での対象 path」・5.2 POST 行・MEDIUM-C）。children は parent の存在・可視性を確認せず常に 200、view 判定を各子にのみ適用、非実在 parent と可視な子ゼロは同じ空配列（design 5.2 children）。保存経路のリビジョン記録接続はタスク 12 で行う（本タスクは認可ゲートの追加のみ）。
   - ファイル: `backend/api/views.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py test api`（既定ポリシーで既存 `tests_pages.py` が全合格し続けることを確認）。
   - _要件: P2-5-1, P2-5-2, P2-5-3, P2-6-2, P2-6-3, P2-6-4, P2-6-5, P2-7-3, P2-7-4_
 
-- [ ] 11. 権限アクセス制御の統合テスト（権限マトリクス・一覧の見え方）
+- [x] 11. 権限アクセス制御の統合テスト（権限マトリクス・一覧の見え方）
   - `api/tests_permissions.py` に `APITestCase` で統合ケースを追加する: view/edit なしの GET/PUT/DELETE/POST が 403（既定）/404（`JANUS_HIDE_FORBIDDEN=True`、ただし POST は常に 403）、未認証 401 と 403 の区別、`is_superuser` 全通過、デフォルト許可で既存同等。`children` が view 可のページのみ返す／親非公開でも子の明示 allow は返る／無権限ページの存在を漏らさない（非実在 parent と可視子ゼロが同じ空配列）。権限管理 API が edit 権限者/管理者のみ許可・他は 403・重複 POST 409・PATCH 更新。`effective-permission` の 401/200・秘匿運用でも `{false,false}`。アセット API 非干渉（`/api/folders`・`/api/assets` がフェーズ 1 挙動維持）。`override_settings` でポリシーフラグを切り替えて 2 パターン検証する。
   - ファイル: `backend/api/tests_permissions.py`
   - 検証: `backend/` で `../.venv/bin/python manage.py test api` が全て合格する。

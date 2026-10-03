@@ -5,6 +5,7 @@ import re
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
@@ -120,3 +121,115 @@ class Asset(models.Model):
 
     def __str__(self) -> str:
         return self.filename
+
+
+class PagePermission(models.Model):
+    """ページパスに対する権限エントリ（design 2.1 / 要件 P2-1）。
+
+    path は Page への FK ではなく文字列で保持し、実ページが無い祖先パスにも
+    設定できる（仮想ノード許容）。主体は principal_type に応じて user/group の
+    どちらか一方のみを非 null で持つ。主体が消えたら設定自体が無意味になるため
+    user/group は CASCADE（Revision の author SET_NULL とは目的が異なる）。
+    """
+
+    PRINCIPAL_TYPE_CHOICES = [
+        ("user", "user"),
+        ("group", "group"),
+    ]
+    ACTION_CHOICES = [
+        ("view", "view"),
+        ("edit", "edit"),
+    ]
+    EFFECT_CHOICES = [
+        ("allow", "allow"),
+        ("deny", "deny"),
+    ]
+
+    path = models.CharField(max_length=1000, db_index=True)
+    principal_type = models.CharField(max_length=5, choices=PRINCIPAL_TYPE_CHOICES)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="page_permissions",
+    )
+    group = models.ForeignKey(
+        "auth.Group",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="page_permissions",
+    )
+    action = models.CharField(max_length=4, choices=ACTION_CHOICES)
+    effect = models.CharField(max_length=5, choices=EFFECT_CHOICES)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["path", "user", "action"],
+                condition=Q(principal_type="user"),
+                name="pageperm_user_unique",
+            ),
+            models.UniqueConstraint(
+                fields=["path", "group", "action"],
+                condition=Q(principal_type="group"),
+                name="pageperm_group_unique",
+            ),
+        ]
+
+    def clean(self) -> None:
+        """principal_type と user/group の整合性を検証する（admin 直接作成の保険）。"""
+
+        if self.principal_type == "user":
+            if self.user is None or self.group is not None:
+                raise ValidationError(
+                    "principal_type='user' のときは user のみを指定してください。"
+                )
+        elif self.principal_type == "group":
+            if self.group is None or self.user is not None:
+                raise ValidationError(
+                    "principal_type='group' のときは group のみを指定してください。"
+                )
+
+    def __str__(self) -> str:
+        return f"{self.path} {self.principal_type} {self.action} {self.effect}"
+
+
+class Revision(models.Model):
+    """ページ本文の全文スナップショット履歴（design 2.2 / 要件 P2-8）。"""
+
+    page = models.ForeignKey(
+        Page,
+        on_delete=models.CASCADE,
+        related_name="revisions",
+    )
+    number = models.PositiveIntegerField()
+    body = models.TextField(blank=True)
+    title = models.CharField(max_length=255, blank=True)
+    # auto_now_add は使わない（Block B のバックフィルで過去日時を明示代入するため）。
+    created_at = models.DateTimeField(db_index=True)
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="authored_revisions",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["page", "number"],
+                name="revision_page_number_unique",
+            ),
+        ]
+        ordering = ["-number"]
+        indexes = [
+            models.Index(fields=["page", "number"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.page_id}#{self.number}"

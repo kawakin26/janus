@@ -11,6 +11,21 @@ urlpatterns = [
     path("auth/logout", views.LogoutView.as_view(), name="auth-logout"),
     path("auth/me", views.MeView.as_view(), name="auth-me"),
     path("pages/children", views.PageChildrenView.as_view(), name="pages-children"),
+    path(
+        "pages/permissions/<int:pk>",
+        views.PagePermissionDetailView.as_view(),
+        name="pages-permissions-detail",
+    ),
+    path(
+        "pages/permissions",
+        views.PagePermissionView.as_view(),
+        name="pages-permissions",
+    ),
+    path(
+        "pages/effective-permission",
+        views.PageEffectivePermissionView.as_view(),
+        name="pages-effective-permission",
+    ),
     path("pages", views.PageDetailView.as_view(), name="pages"),
     path("folders", views.FolderListCreateView.as_view(), name="folders"),
     path("assets", views.AssetListCreateView.as_view(), name="assets"),

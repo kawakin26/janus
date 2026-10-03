@@ -181,6 +181,18 @@ CORS_ALLOWED_ORIGINS = env_list("JANUS_CORS_ALLOWED_ORIGINS")
 # ---------------------------------------------------------------------------
 JANUS_REQUIRE_AUTH = env_bool("JANUS_REQUIRE_AUTH", True)
 
+# フェーズ 2 のデフォルト権限ポリシー（design 4 章 / 要件 P2-5）。
+# 明示的な PagePermission エントリで決着しないときの既定を表す。
+# 既定値はフェーズ 1 の挙動（全員 view/edit 可）を保つ安全な初期値。
+# JANUS_DEFAULT_PAGE_VIEW / JANUS_DEFAULT_PAGE_EDIT は実効権限判定ヘルパ
+# （FEAT-003）が default_allow / default_edit_allow として参照する。
+JANUS_DEFAULT_PAGE_VIEW = env_bool("JANUS_DEFAULT_PAGE_VIEW", True)
+JANUS_DEFAULT_PAGE_EDIT = env_bool("JANUS_DEFAULT_PAGE_EDIT", True)
+
+# 禁止ページの存在秘匿（design 4 章 / 要件 P2-6）。True なら view 不可の
+# ページを 403 ではなく 404 として隠す。既定 False（存在を隠さない）。
+JANUS_HIDE_FORBIDDEN = env_bool("JANUS_HIDE_FORBIDDEN", False)
+
 
 # ---------------------------------------------------------------------------
 # Django REST Framework（design.md 5 章「認証方式（要件4）とセキュリティ移行方針」）

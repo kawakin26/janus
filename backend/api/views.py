@@ -13,10 +13,17 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Asset, Folder, Page
+from .models import Asset, Folder, Page, PagePermission
+from .permissions import (
+    PERMISSION_ENTRY_NOT_FOUND_DETAIL,
+    compute_view_edit,
+    require_edit_permission_strict,
+    require_page_permission,
+)
 from .serializers import (
     AssetSerializer,
     FolderSerializer,
+    PagePermissionSerializer,
     PageSerializer,
     PageSummarySerializer,
     UserSerializer,
@@ -57,11 +64,16 @@ class MeView(APIView):
 
 DUPLICATE_PATH_DETAIL = "同一パスのページが既に存在します。"
 PAGE_NOT_FOUND_DETAIL = "指定されたパスのページが見つかりません。"
+DUPLICATE_PERMISSION_DETAIL = "同一の権限エントリが既に存在します。"
 
 
 class PageDetailView(APIView):
     def get(self, request, *args, **kwargs):
         path = normalize_path(request.query_params.get("path"))
+        # 権限 → 存在の順（design 5.2）。view 拒否は実在を参照せず 403/404。
+        denied = require_page_permission(request, path, "view")
+        if denied is not None:
+            return denied
         page = Page.objects.filter(path=path).first()
         if page is None:
             return Response({"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND)
@@ -69,6 +81,11 @@ class PageDetailView(APIView):
 
     def post(self, request, *args, **kwargs):
         path = normalize_path(request.data.get("path"))
+        # 作成予定 path をそのまま対象に edit 判定（design 3「POST での対象 path」）。
+        # POST の edit 拒否は秘匿設定に関わらず常に 403（MEDIUM-C）。
+        denied = require_edit_permission_strict(request, path)
+        if denied is not None:
+            return denied
         if Page.objects.filter(path=path).exists():
             return Response({"detail": DUPLICATE_PATH_DETAIL}, status=status.HTTP_409_CONFLICT)
         serializer = PageSerializer(data=request.data)
@@ -88,6 +105,10 @@ class PageDetailView(APIView):
 
     def put(self, request, *args, **kwargs):
         path = normalize_path(request.query_params.get("path"))
+        # 権限 → 存在の順（design 5.2）。edit 拒否は 403（既定）／404（秘匿）。
+        denied = require_page_permission(request, path, "edit")
+        if denied is not None:
+            return denied
         page = Page.objects.filter(path=path).first()
         if page is None:
             return Response({"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND)
@@ -104,6 +125,10 @@ class PageDetailView(APIView):
 
     def delete(self, request, *args, **kwargs):
         path = normalize_path(request.query_params.get("path"))
+        # 権限 → 存在の順（design 5.2）。edit 拒否は 403（既定）／404（秘匿）。
+        denied = require_page_permission(request, path, "edit")
+        if denied is not None:
+            return denied
         page = Page.objects.filter(path=path).first()
         if page is None:
             return Response({"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND)
@@ -122,7 +147,101 @@ class PageChildrenView(APIView):
             remainder = page.path[len(prefix):]
             if remainder and "/" not in remainder:
                 children.append(page)
-        return Response(PageSummarySerializer(children, many=True).data, status=status.HTTP_200_OK)
+        # parent 自身の存在・可視性は確認せず常に 200。view 判定を各子にのみ適用し、
+        # 許可された子のみ返す（design 5.2）。非実在 parent と可視子ゼロは同じ []。
+        visible = [
+            page
+            for page in children
+            if require_page_permission(request, page.path, "view") is None
+        ]
+        return Response(PageSummarySerializer(visible, many=True).data, status=status.HTTP_200_OK)
+
+
+class PagePermissionView(APIView):
+    """権限エントリの一覧取得・新規作成（design 5.3）。管理 API 自体は edit 権限者/管理者のみ。"""
+
+    def get(self, request, *args, **kwargs):
+        path = normalize_path(request.query_params.get("path"))
+        # 認可を一覧取得より先に（第三者に任意 path のエントリ有無を観測させない）。
+        denied = require_page_permission(request, path, "edit")
+        if denied is not None:
+            return denied
+        entries = PagePermission.objects.filter(path=path)
+        return Response(
+            PagePermissionSerializer(entries, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request, *args, **kwargs):
+        path = normalize_path(request.data.get("path"))
+        denied = require_page_permission(request, path, "edit")
+        if denied is not None:
+            return denied
+        # 正規化済み path を注入して検証・作成する。
+        payload = {key: request.data.get(key) for key in request.data}
+        payload["path"] = path
+        serializer = PagePermissionSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        try:
+            with transaction.atomic():
+                entry = serializer.save()
+        except IntegrityError:
+            return Response(
+                {"detail": DUPLICATE_PERMISSION_DETAIL}, status=status.HTTP_409_CONFLICT
+            )
+        return Response(
+            PagePermissionSerializer(entry).data, status=status.HTTP_201_CREATED
+        )
+
+
+class PagePermissionDetailView(APIView):
+    """権限エントリの effect 更新・削除（design 5.3 MEDIUM-2）。"""
+
+    def _get_entry(self, pk):
+        return PagePermission.objects.filter(pk=pk).first()
+
+    def patch(self, request, pk, *args, **kwargs):
+        # ①エントリ取得（無ければ 404）②entry.path の edit 判定 ③effect のみ更新。
+        entry = self._get_entry(pk)
+        if entry is None:
+            return Response(
+                {"detail": PERMISSION_ENTRY_NOT_FOUND_DETAIL},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        denied = require_page_permission(request, entry.path, "edit")
+        if denied is not None:
+            return denied
+        serializer = PagePermissionSerializer(entry, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            PagePermissionSerializer(entry).data, status=status.HTTP_200_OK
+        )
+
+    def delete(self, request, pk, *args, **kwargs):
+        entry = self._get_entry(pk)
+        if entry is None:
+            return Response(
+                {"detail": PERMISSION_ENTRY_NOT_FOUND_DETAIL},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        denied = require_page_permission(request, entry.path, "edit")
+        if denied is not None:
+            return denied
+        entry.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PageEffectivePermissionView(APIView):
+    """現在ユーザーの path に対する {view, edit} を返す（design 5.4）。
+
+    未認証は既定 IsAuthenticated が 401 を担保。認証済みは任意 path 可で、権限
+    不足でも 403/404 を返さず常に 200+{view,edit}（秘匿運用でも {false,false}）。
+    """
+
+    def get(self, request, *args, **kwargs):
+        path = normalize_path(request.query_params.get("path"))
+        return Response(compute_view_edit(request, path), status=status.HTTP_200_OK)
 
 
 ASSET_NOT_FOUND_DETAIL = "指定されたアセットが見つかりません。"
