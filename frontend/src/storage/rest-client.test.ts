@@ -412,6 +412,290 @@ describe('resolveAssetUrl', () => {
   })
 })
 
+// --- PageClient（リビジョン系・ブロックC） -----------------------------------
+
+const sampleRevisionSummary = {
+  id: 3,
+  number: 2,
+  created_at: '2024-01-02T00:00:00Z',
+  author: sampleUser,
+}
+
+const sampleRevision = {
+  id: 3,
+  number: 2,
+  created_at: '2024-01-02T00:00:00Z',
+  author: sampleUser,
+  body: 'new body',
+  title: 'Intro',
+}
+
+describe('listRevisions', () => {
+  it('200 で RevisionSummary[] を返す（opts 無しは ?path= のみ）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, [sampleRevisionSummary]))
+    const client = new RestClient()
+    const result = await client.listRevisions('/docs/intro')
+    expect(result).toEqual([sampleRevisionSummary])
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/revisions?path=%2Fdocs%2Fintro')
+    expect(init.method).toBe('GET')
+  })
+
+  it('opts.limit/offset をクエリに付与する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, []))
+    const client = new RestClient()
+    await client.listRevisions('/docs/intro', { limit: 20, offset: 40 })
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/pages/revisions?path=%2Fdocs%2Fintro&limit=20&offset=40',
+    )
+  })
+
+  it('403 のとき ApiError(status=403) を throw する（401 と区別）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { detail: 'forbidden' }))
+    const client = new RestClient()
+    await expect(client.listRevisions('/secret')).rejects.toMatchObject({
+      status: 403,
+    })
+  })
+})
+
+describe('getRevision', () => {
+  it('200 で Revision を返す（?path=&number=）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, sampleRevision))
+    const client = new RestClient()
+    const result = await client.getRevision('/docs/intro', 2)
+    expect(result).toEqual(sampleRevision)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/revisions/detail?path=%2Fdocs%2Fintro&number=2')
+    expect(init.method).toBe('GET')
+  })
+
+  it('404 のとき ApiError(status=404) を throw する（null にしない）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(404, { detail: 'nope' }))
+    const client = new RestClient()
+    await expect(client.getRevision('/docs/intro', 99)).rejects.toMatchObject({
+      status: 404,
+    })
+  })
+
+  it('403 のとき ApiError(status=403) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { detail: 'forbidden' }))
+    const client = new RestClient()
+    await expect(client.getRevision('/secret', 1)).rejects.toMatchObject({
+      status: 403,
+    })
+  })
+})
+
+describe('diffRevisions', () => {
+  it('200 で DiffLine[] を返す（?from=&to=）', async () => {
+    const diff = [
+      { op: 'equal', line: 'same' },
+      { op: 'del', line: 'old' },
+      { op: 'add', line: 'new' },
+    ]
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, diff))
+    const client = new RestClient()
+    const result = await client.diffRevisions('/docs/intro', 1, 2)
+    expect(result).toEqual(diff)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/pages/revisions/diff?path=%2Fdocs%2Fintro&from=1&to=2',
+    )
+  })
+
+  it('404 のとき ApiError(status=404) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(404, { detail: 'nope' }))
+    const client = new RestClient()
+    await expect(
+      client.diffRevisions('/docs/intro', 1, 99),
+    ).rejects.toMatchObject({ status: 404 })
+  })
+})
+
+describe('restoreRevision', () => {
+  it('200 で Page を返す（POST body {path, number}）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, samplePage))
+    const client = new RestClient()
+    const result = await client.restoreRevision('/docs/intro', 2)
+    expect(result).toEqual(samplePage)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/revisions/restore')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ path: '/docs/intro', number: 2 })
+  })
+
+  it('401 のとき ApiError(status=401) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(401, { detail: 'auth' }))
+    const client = new RestClient()
+    await expect(
+      client.restoreRevision('/docs/intro', 2),
+    ).rejects.toMatchObject({ status: 401 })
+  })
+
+  it('403 のとき ApiError(status=403) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { detail: 'forbidden' }))
+    const client = new RestClient()
+    await expect(
+      client.restoreRevision('/secret', 2),
+    ).rejects.toMatchObject({ status: 403 })
+  })
+})
+
+// --- PermissionClient（ブロックC） --------------------------------------------
+
+const samplePermission = {
+  id: 11,
+  path: '/docs/intro',
+  principalType: 'user' as const,
+  principalId: 1,
+  action: 'edit' as const,
+  effect: 'allow' as const,
+}
+
+describe('listPermissions', () => {
+  it('200 で PermissionEntry[] を返す（?path=）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, [samplePermission]))
+    const client = new RestClient()
+    const result = await client.listPermissions('/docs/intro')
+    expect(result).toEqual([samplePermission])
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/permissions?path=%2Fdocs%2Fintro')
+    expect(init.method).toBe('GET')
+  })
+
+  it('200 空配列をそのまま返す', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, []))
+    const client = new RestClient()
+    await expect(client.listPermissions('/docs/intro')).resolves.toEqual([])
+  })
+
+  it('403 のとき ApiError(status=403) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { detail: 'forbidden' }))
+    const client = new RestClient()
+    await expect(client.listPermissions('/secret')).rejects.toMatchObject({
+      status: 403,
+    })
+  })
+})
+
+describe('grantPermission', () => {
+  it('201 で PermissionEntry を返す（body 検証）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(201, samplePermission))
+    const client = new RestClient()
+    const input = {
+      path: '/docs/intro',
+      principalType: 'user' as const,
+      principalId: 1,
+      action: 'edit' as const,
+      effect: 'allow' as const,
+    }
+    const result = await client.grantPermission(input)
+    expect(result).toEqual(samplePermission)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/permissions')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual(input)
+  })
+
+  it('409 のとき ApiError(status=409) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(409, { detail: 'duplicate' }))
+    const client = new RestClient()
+    await expect(
+      client.grantPermission({
+        path: '/docs/intro',
+        principalType: 'user',
+        principalId: 1,
+        action: 'edit',
+        effect: 'allow',
+      }),
+    ).rejects.toMatchObject({ status: 409 })
+  })
+})
+
+describe('updatePermission', () => {
+  it('200 で PermissionEntry を返す（PATCH body {effect}）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(200, { ...samplePermission, effect: 'deny' }),
+    )
+    const client = new RestClient()
+    const result = await client.updatePermission(11, 'deny')
+    expect(result.effect).toBe('deny')
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/permissions/11')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body)).toEqual({ effect: 'deny' })
+  })
+
+  it('404 のとき ApiError(status=404) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(404, { detail: 'nope' }))
+    const client = new RestClient()
+    await expect(client.updatePermission(99, 'deny')).rejects.toMatchObject({
+      status: 404,
+    })
+  })
+})
+
+describe('revokePermission', () => {
+  it('204 で正常終了する（DELETE）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(204, null))
+    const client = new RestClient()
+    await expect(client.revokePermission(11)).resolves.toBeUndefined()
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/permissions/11')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('404 のとき ApiError(status=404) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(404, { detail: 'nope' }))
+    const client = new RestClient()
+    await expect(client.revokePermission(99)).rejects.toMatchObject({
+      status: 404,
+    })
+  })
+})
+
+describe('getEffectivePermission', () => {
+  it('200 で {view, edit} を返す（?path=）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, { view: true, edit: false }))
+    const client = new RestClient()
+    const result = await client.getEffectivePermission('/docs/intro')
+    expect(result).toEqual({ view: true, edit: false })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/effective-permission?path=%2Fdocs%2Fintro')
+    expect(init.method).toBe('GET')
+  })
+
+  it('401 のとき ApiError(status=401) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(401, { detail: 'auth' }))
+    const client = new RestClient()
+    await expect(
+      client.getEffectivePermission('/docs/intro'),
+    ).rejects.toMatchObject({ status: 401 })
+  })
+})
+
 // --- 401 / search -------------------------------------------------------------
 
 describe('401 の扱い', () => {

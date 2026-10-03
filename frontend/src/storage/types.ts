@@ -71,6 +71,46 @@ export interface SearchHit {
   snippet?: string
 }
 
+/** 履歴一覧の軽量表現（RevisionSummarySerializer に一致）。body/title を含まない。 */
+export interface RevisionSummary {
+  id: number
+  number: number
+  created_at: string
+  author: User | null
+}
+
+/** リビジョン 1 件の詳細表現（RevisionSerializer に一致）。本文・タイトルを含む。 */
+export interface Revision {
+  id: number
+  number: number
+  created_at: string
+  author: User | null
+  body: string
+  title: string
+}
+
+/** 行単位差分の 1 行（RevisionDiffView に一致）。replace は del 群+add 群に分解済み。 */
+export interface DiffLine {
+  op: 'add' | 'del' | 'equal'
+  line: string
+}
+
+/** 権限エントリ（PagePermissionSerializer に一致）。指定子はすべて number。 */
+export interface PermissionEntry {
+  id: number
+  path: string
+  principalType: 'user' | 'group'
+  principalId: number
+  action: 'view' | 'edit'
+  effect: 'allow' | 'deny'
+}
+
+/** 現在ユーザーの path に対する実効権限（PageEffectivePermissionView に一致）。 */
+export interface EffectivePermission {
+  view: boolean
+  edit: boolean
+}
+
 // ---------------------------------------------------------------------------
 // 契約（interface）。design 4 章に忠実。
 // ---------------------------------------------------------------------------
@@ -89,6 +129,37 @@ export interface PageClient {
   createPage(input: { path: string; title?: string; body: string }): Promise<Page>
   updatePage(path: string, input: { title?: string; body: string }): Promise<Page>
   deletePage(path: string): Promise<void>
+  /** ページ履歴一覧（新しい順）。limit/offset でページングする。指定子は number。 */
+  listRevisions(
+    path: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<RevisionSummary[]>
+  /** リビジョン 1 件の本文取得。存在しない number/別ページは 404（throw）。 */
+  getRevision(path: string, number: number): Promise<Revision>
+  /** 2 リビジョンの行単位差分。指定子は number。 */
+  diffRevisions(path: string, from: number, to: number): Promise<DiffLine[]>
+  /** 指定リビジョンへ復元（新リビジョン化）。復元後の Page を返す。 */
+  restoreRevision(path: string, number: number): Promise<Page>
+}
+
+/** ページ権限管理契約（design 5.3/5.4）。指定子はすべて number。 */
+export interface PermissionClient {
+  /** path の権限エントリ一覧（0 件は空配列）。 */
+  listPermissions(path: string): Promise<PermissionEntry[]>
+  /** 権限エントリを付与する。重複 (path,主体,action) は 409（throw）。 */
+  grantPermission(input: {
+    path: string
+    principalType: 'user' | 'group'
+    principalId: number
+    action: 'view' | 'edit'
+    effect: 'allow' | 'deny'
+  }): Promise<PermissionEntry>
+  /** 権限エントリの effect のみ更新する。存在しない id は 404（throw）。 */
+  updatePermission(id: number, effect: 'allow' | 'deny'): Promise<PermissionEntry>
+  /** 権限エントリを取消す。 */
+  revokePermission(id: number): Promise<void>
+  /** 現在ユーザーの path に対する実効権限。認証済みは常に 200・401 のみ throw。 */
+  getEffectivePermission(path: string): Promise<EffectivePermission>
 }
 
 /** 独立アセットライブラリ契約。 */
@@ -115,7 +186,8 @@ export interface StorageClient
   extends AuthClient,
     PageClient,
     AssetClient,
-    SearchClient {}
+    SearchClient,
+    PermissionClient {}
 
 // ---------------------------------------------------------------------------
 // エラー型（design 9 章）

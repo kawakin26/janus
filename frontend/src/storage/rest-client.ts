@@ -17,9 +17,14 @@ import { ApiError } from './types'
 import type {
   Asset,
   AssetRef,
+  DiffLine,
+  EffectivePermission,
   Folder,
   Page,
   PageSummary,
+  PermissionEntry,
+  Revision,
+  RevisionSummary,
   SearchHit,
   StorageClient,
   User,
@@ -256,6 +261,157 @@ export class RestClient implements StorageClient {
     if (!response.ok) {
       throw await this.toApiError(response)
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // PageClient（リビジョン系・ブロックC）
+  //
+  // 実 API（backend/api/urls.py・views.py）に正確一致させる。すべて number ベース。
+  // 403 は特別分岐せず toApiError 経由で ApiError(status=403) を throw する
+  // （401 とは status で自然に区別される）。getPage と違い 404→null 変換はしない。
+  // -------------------------------------------------------------------------
+
+  async listRevisions(
+    path: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<RevisionSummary[]> {
+    let query = `pages/revisions?path=${encodeURIComponent(path)}`
+    if (typeof opts?.limit === 'number') {
+      query += `&limit=${opts.limit}`
+    }
+    if (typeof opts?.offset === 'number') {
+      query += `&offset=${opts.offset}`
+    }
+    const response = await fetch(this.url(query), {
+      method: 'GET',
+      headers: { ...this.authHeaders() },
+    })
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as RevisionSummary[]
+  }
+
+  async getRevision(path: string, number: number): Promise<Revision> {
+    const response = await fetch(
+      this.url(
+        `pages/revisions/detail?path=${encodeURIComponent(path)}&number=${number}`,
+      ),
+      { method: 'GET', headers: { ...this.authHeaders() } },
+    )
+    // 存在しない number/別ページの 404 も throw する（null にしない）。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as Revision
+  }
+
+  async diffRevisions(
+    path: string,
+    from: number,
+    to: number,
+  ): Promise<DiffLine[]> {
+    const response = await fetch(
+      this.url(
+        `pages/revisions/diff?path=${encodeURIComponent(path)}&from=${from}&to=${to}`,
+      ),
+      { method: 'GET', headers: { ...this.authHeaders() } },
+    )
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as DiffLine[]
+  }
+
+  async restoreRevision(path: string, number: number): Promise<Page> {
+    const response = await fetch(this.url('pages/revisions/restore'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+      body: JSON.stringify({ path, number }),
+    })
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as Page
+  }
+
+  // -------------------------------------------------------------------------
+  // PermissionClient（ブロックC）
+  //
+  // revisions 系が number ベースなのに対し、permissions は id（PK）で PATCH/DELETE。
+  // -------------------------------------------------------------------------
+
+  async listPermissions(path: string): Promise<PermissionEntry[]> {
+    const response = await fetch(
+      this.url(`pages/permissions?path=${encodeURIComponent(path)}`),
+      { method: 'GET', headers: { ...this.authHeaders() } },
+    )
+    // 0 件は空配列 200。非 2xx のみ throw。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as PermissionEntry[]
+  }
+
+  async grantPermission(input: {
+    path: string
+    principalType: 'user' | 'group'
+    principalId: number
+    action: 'view' | 'edit'
+    effect: 'allow' | 'deny'
+  }): Promise<PermissionEntry> {
+    const response = await fetch(this.url('pages/permissions'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+      body: JSON.stringify(input),
+    })
+    // 重複 (path,主体,action) は 409。呼び出し側が status で判別できる。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as PermissionEntry
+  }
+
+  async updatePermission(
+    id: number,
+    effect: 'allow' | 'deny',
+  ): Promise<PermissionEntry> {
+    const response = await fetch(
+      this.url(`pages/permissions/${id}`),
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+        body: JSON.stringify({ effect }),
+      },
+    )
+    // effect のみ更新。存在しない id は 404（throw）。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as PermissionEntry
+  }
+
+  async revokePermission(id: number): Promise<void> {
+    const response = await fetch(this.url(`pages/permissions/${id}`), {
+      method: 'DELETE',
+      headers: { ...this.authHeaders() },
+    })
+    // 204 で正常終了。非 2xx（404 含む）は throw。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+  }
+
+  async getEffectivePermission(path: string): Promise<EffectivePermission> {
+    const response = await fetch(
+      this.url(`pages/effective-permission?path=${encodeURIComponent(path)}`),
+      { method: 'GET', headers: { ...this.authHeaders() } },
+    )
+    // 認証済みは常に 200。非 2xx（実質 401）だけ throw する（404→null 変換はしない）。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as EffectivePermission
   }
 
   // -------------------------------------------------------------------------

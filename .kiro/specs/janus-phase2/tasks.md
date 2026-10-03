@@ -127,25 +127,25 @@
 
 ## フロントエンド: 契約と最小 UI（バックエンド API 確定後）
 
-- [ ] 16. StorageClient 契約の追加（型・インターフェース）
+- [x] 16. StorageClient 契約の追加（型・インターフェース）
   - `frontend/src/storage/types.ts` に型を追加する（既存シグネチャは変更しない・追加のみ、design 8.1）: `RevisionSummary`（`id, number, created_at, author: User | null`）、`Revision`（`+ body, title`）、`DiffLine { op: 'add'|'del'|'equal'; line: string }`、`PermissionEntry { id, path, principalType, principalId: number, action, effect }`、`EffectivePermission { view: boolean; edit: boolean }`。`PageClient` に `listRevisions(path, opts?)`/`getRevision(path, number)`/`diffRevisions(path, from, to)`/`restoreRevision(path, number)` を追加。新 `PermissionClient`（`listPermissions`/`grantPermission`/`updatePermission`/`revokePermission`/`getEffectivePermission`）を定義し `StorageClient` に合成する。指定子はすべて `number`。
   - ファイル: `frontend/src/storage/types.ts`
   - 検証: `frontend/` で `npx tsc --noEmit` が成功する。
   - _要件: P2-13-1, P2-13-2, P2-13-3, P2-13-5_
 
-- [ ] 17. RestClient 実装と契約テスト
+- [x] 17. RestClient 実装と契約テスト
   - `frontend/src/storage/rest-client.ts` に新メソッドを既存の `url()`/`authHeaders()`/`toApiError()` ヘルパで実装する（既存メソッドは変更しない、design 8.2）。403 は `ApiError(status=403)`（401 と区別）、`getRevision`/`diffRevisions` の 404 は throw、`getEffectivePermission` は認証済みなら常に 200・401 のみ throw。REST URL は 5.6 の集約表に合わせる。`frontend/src/storage/rest-client.test.ts` に fetch モックで各メソッドの成功・403・404・401 ケースを追加する（既存流儀）。
   - ファイル: `frontend/src/storage/rest-client.ts`, `frontend/src/storage/rest-client.test.ts`
   - 検証: `frontend/` で `npm run test:run`（新旧テスト全合格）→ `npx tsc --noEmit` が成功する。
   - _要件: P2-13-1, P2-13-2, P2-13-3, P2-6-1_
 
-- [ ] 18. 履歴 / 差分 / 復元の最小 UI
+- [x] 18. 履歴 / 差分 / 復元の最小 UI
   - `frontend/src/pages/PageHistoryPage.tsx`（+ `.module.css`）を新規作成し、`App.tsx` に `/history/*` ルートを `RequireAuth` でラップして追加する。`listRevisions` で一覧（新しい順・ページング）、2 件選択で `diffRevisions` の結果を行単位で色分け表示、edit 権限者に各リビジョンの「このリビジョンに復元」ボタン（`restoreRevision`）。`PageViewPage.tsx` でマウント時に `getEffectivePermission(path)` を取得し view なら「履歴」導線、edit なら「編集/削除/権限設定」導線を出し分ける。素の CSS Modules を維持し追加フレームワークを入れない。403 時は本文・リビジョン本文を描画しない。
   - ファイル: `frontend/src/pages/PageHistoryPage.tsx`, `frontend/src/pages/PageHistoryPage.module.css`, `frontend/src/App.tsx`, `frontend/src/pages/PageViewPage.tsx`
   - 検証: `frontend/` で `npx tsc --noEmit` → `npm run test:run` → `npm run build` が成功する。
   - _要件: P2-14-1, P2-14-2, P2-14-4, P2-6-6_
 
-- [ ] 19. 権限設定の最小 UI とエラー表示統合
+- [x] 19. 権限設定の最小 UI とエラー表示統合
   - `frontend/src/pages/PagePermissionPage.tsx`（+ `.module.css`）を新規作成し、`App.tsx` に `/permissions/*` ルートを `RequireAuth` で追加する（edit 権限者/管理者のみ到達想定）。主体（user/group）× action（view/edit）× effect（allow/deny）の一覧・付与（`grantPermission`）・取消（`revokePermission`）・更新（`updatePermission`）の最小フォーム。到達して 403 を受けた場合の文言は「編集権限がありません」に集約。`frontend/src/pages/use-page-error.ts` を拡張し、閲覧系 403 を「閲覧権限がありません」、編集系・権限設定系 403 を「編集権限がありません」、401 は従来どおり logout+/login に対応付ける。edit 権限のない利用者には編集・削除・復元・権限設定の UI を非表示/無効化する。
   - ファイル: `frontend/src/pages/PagePermissionPage.tsx`, `frontend/src/pages/PagePermissionPage.module.css`, `frontend/src/App.tsx`, `frontend/src/pages/use-page-error.ts`
   - 検証: `frontend/` で `npx tsc --noEmit` → `npm run test:run` → `npm run build` → `npm run lint` が成功する。History/Permission 画面の最小テスト（403 時に本文非描画、edit なしで操作 UI 無効/非表示）を追加する。

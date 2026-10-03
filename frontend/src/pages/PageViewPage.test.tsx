@@ -50,6 +50,7 @@ describe('PageViewPage', () => {
   it('getPage の body が MarkdownRenderer 経由で描画される', async () => {
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
+      getEffectivePermission: vi.fn(async () => ({ view: true, edit: true })),
       getPage: vi.fn(async () => makePage()),
       listChildren: vi.fn(async () => []),
     })
@@ -65,6 +66,7 @@ describe('PageViewPage', () => {
   it('getPage が null のとき 404 メッセージと作成導線を出す', async () => {
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
+      getEffectivePermission: vi.fn(async () => ({ view: true, edit: true })),
       getPage: vi.fn(async () => null),
       listChildren: vi.fn(async () => []),
     })
@@ -80,6 +82,7 @@ describe('PageViewPage', () => {
   it('子ページが listChildren の戻りでリンク化される', async () => {
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
+      getEffectivePermission: vi.fn(async () => ({ view: true, edit: true })),
       getPage: vi.fn(async () => makePage()),
       listChildren: vi.fn(async () => [
         { path: '/docs/intro/a', title: '子A' },
@@ -101,6 +104,7 @@ describe('PageViewPage', () => {
     const deletePage = vi.fn(async () => {})
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
+      getEffectivePermission: vi.fn(async () => ({ view: true, edit: true })),
       getPage: vi.fn(async () => makePage()),
       listChildren: vi.fn(async () => []),
       deletePage,

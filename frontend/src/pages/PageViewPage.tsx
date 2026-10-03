@@ -17,7 +17,8 @@ import AppLayout from '../components/AppLayout'
 import Breadcrumbs from '../components/Breadcrumbs'
 import { usePageError } from './use-page-error'
 import styles from './PageViewPage.module.css'
-import type { Page, PageSummary } from '../storage/types'
+import { ApiError } from '../storage/types'
+import type { EffectivePermission, Page, PageSummary } from '../storage/types'
 
 function PageViewPage() {
   const splat = useParams()['*'] ?? ''
@@ -30,13 +31,31 @@ function PageViewPage() {
   const [page, setPage] = useState<Page | null>(null)
   const [children, setChildren] = useState<PageSummary[]>([])
   const [error, setError] = useState<string | null>(null)
+  // 実効権限（導線の出し分け用）。取得前・失敗時は閲覧も編集も不可扱い。
+  const [perm, setPerm] = useState<EffectivePermission>({ view: false, edit: false })
 
   useEffect(() => {
     let active = true
     void (async () => {
       setLoading(true)
       setError(null)
+      setPerm({ view: false, edit: false })
       try {
+        // 実効権限は導線の出し分け補助。取得失敗（403/404 等）は致命的でないので
+        // {view:false, edit:false} にフォールバックするが、401 だけは usePageError で処理する。
+        try {
+          const effective = await storage.getEffectivePermission(path)
+          if (active) {
+            setPerm(effective)
+          }
+        } catch (permErr) {
+          const message = handleError(permErr, '')
+          // 401 の場合 handleError が null を返し logout+/login 済み。ここで中断する。
+          if (message === null) {
+            return
+          }
+          // それ以外は権限不明として view/edit とも false のまま続行。
+        }
         const fetched = await storage.getPage(path)
         if (!active) {
           return
@@ -56,7 +75,13 @@ function PageViewPage() {
         }
       } catch (err) {
         if (active) {
-          setError(handleError(err, 'ページの取得に失敗しました'))
+          // view 不足による 403 は本文を描画せず「閲覧権限がありません」を出す。
+          // それ以外の失敗は従来どおり汎用メッセージを出す（401 は usePageError が遷移）。
+          const fallback =
+            err instanceof ApiError && err.status === 403
+              ? '閲覧権限がありません'
+              : 'ページの取得に失敗しました'
+          setError(handleError(err, fallback))
         }
       } finally {
         if (active) {
@@ -120,16 +145,28 @@ function PageViewPage() {
         <Link to="/" className={styles.listLink}>
           一覧へ
         </Link>
-        <Link to={`/edit${path}`} className={styles.editButton}>
-          編集
-        </Link>
-        <button
-          type="button"
-          onClick={handleDelete}
-          className={styles.deleteButton}
-        >
-          削除
-        </button>
+        {perm.view && (
+          <Link to={`/history${path}`} className={styles.editButton}>
+            履歴
+          </Link>
+        )}
+        {perm.edit && (
+          <>
+            <Link to={`/edit${path}`} className={styles.editButton}>
+              編集
+            </Link>
+            <Link to={`/permissions${path}`} className={styles.editButton}>
+              権限設定
+            </Link>
+            <button
+              type="button"
+              onClick={handleDelete}
+              className={styles.deleteButton}
+            >
+              削除
+            </button>
+          </>
+        )}
       </nav>
       <article>
         <MarkdownRenderer body={page.body} />

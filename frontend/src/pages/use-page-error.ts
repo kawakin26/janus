@@ -34,6 +34,11 @@ export function usePageError(): PageErrorHandler {
           })
           return null
         }
+        if (err.status === 403) {
+          // 権限不足: サーバー固定の detail ではなく画面指定の文言を出す
+          //（閲覧系は「閲覧権限がありません」、編集・権限設定系は「編集権限がありません」）。
+          return fallbackMessage
+        }
         // detail があれば優先、無ければ汎用メッセージ。
         return err.detail ?? fallbackMessage
       }

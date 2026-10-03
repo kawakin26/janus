@@ -28,6 +28,15 @@ export interface StubStorageOverrides {
   getAssetFileUrl?: StorageClient['getAssetFileUrl']
   releaseAssetFileUrl?: StorageClient['releaseAssetFileUrl']
   resolveAssetUrl?: StorageClient['resolveAssetUrl']
+  listRevisions?: StorageClient['listRevisions']
+  getRevision?: StorageClient['getRevision']
+  diffRevisions?: StorageClient['diffRevisions']
+  restoreRevision?: StorageClient['restoreRevision']
+  listPermissions?: StorageClient['listPermissions']
+  grantPermission?: StorageClient['grantPermission']
+  updatePermission?: StorageClient['updatePermission']
+  revokePermission?: StorageClient['revokePermission']
+  getEffectivePermission?: StorageClient['getEffectivePermission']
 }
 
 /** 未指定メソッドはテスト中に呼ばれたことが分かるエラーを返す。 */
@@ -53,6 +62,16 @@ export function createStubStorage(overrides: StubStorageOverrides = {}): Storage
     getAssetFileUrl: overrides.getAssetFileUrl ?? notImplemented('getAssetFileUrl'),
     releaseAssetFileUrl: overrides.releaseAssetFileUrl ?? vi.fn(),
     resolveAssetUrl: overrides.resolveAssetUrl ?? notImplemented('resolveAssetUrl'),
+    listRevisions: overrides.listRevisions ?? notImplemented('listRevisions'),
+    getRevision: overrides.getRevision ?? notImplemented('getRevision'),
+    diffRevisions: overrides.diffRevisions ?? notImplemented('diffRevisions'),
+    restoreRevision: overrides.restoreRevision ?? notImplemented('restoreRevision'),
+    listPermissions: overrides.listPermissions ?? notImplemented('listPermissions'),
+    grantPermission: overrides.grantPermission ?? notImplemented('grantPermission'),
+    updatePermission: overrides.updatePermission ?? notImplemented('updatePermission'),
+    revokePermission: overrides.revokePermission ?? notImplemented('revokePermission'),
+    getEffectivePermission:
+      overrides.getEffectivePermission ?? notImplemented('getEffectivePermission'),
     search: notImplemented('search'),
   }
 }
