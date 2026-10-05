@@ -7,3 +7,7 @@ Source: https://github.com/jgraph/drawio (release v32.0.2)
 
 The bundled files under public/drawio/ are redistributed unmodified from the
 above source. No endorsement by JGraph Ltd / draw.io AG is implied.
+
+The stencil libraries and icons (bundled inline in webapp/js/stencils.min.js and
+accompanied by webapp/stencils/LICENSE) are covered by a separate usage-restriction
+license distinct from the Apache-2.0 license above; see webapp/stencils/LICENSE.

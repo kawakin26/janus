@@ -25,6 +25,13 @@ MIT ライセンスの文言は Janus 自身の著作物に対するものであ
 - 備考: 配布物（`viewer/`・`webapp/js/` 配下の各ファイル）は公式リリースから無改変で同梱しています。
   `webapp/js/PreConfig.js` および `webapp/js/PostConfig.js` は Janus 側で追加したオフライン設定ファイルで、
   draw.io 本体の改変ではありません。JGraph Ltd / draw.io AG による推奨（endorsement）を含意しません。
+- ステンシル／アイコンのライセンス（重要）: 同梱 `webapp/js/stencils.min.js` に内包されるステンシル
+  ライブラリおよびアイコン集合、ならびに `webapp/stencils/LICENSE` には、draw.io 本体の Apache-2.0 とは
+  **別の利用制限ライセンス**が適用されます。これはこれらのアイコン／ステンシル（およびその派生物）を
+  Atlassian 製品や Atlassian マーケットプレイス／プラグイン生態系向けに利用・配布・組み込みすることを
+  書面許諾なしに制限する条項で、全文は `frontend/public/drawio/webapp/stencils/LICENSE` にあります。
+  この制限は、本ソフトウェアで作成したエンドユーザーの図面出力（書き出し画像・文書等）には適用されません。
+  Janus は Atlassian 向け製品ではないため実利用上の抵触は想定していませんが、再配布の正確性のため明示します。
 
 ### ezjww（JWW/Jw_cad リーダ・WebAssembly ビルド）
 - 用途: JWW ファイルのブラウザ内パース（CAD→SVG 変換）。
