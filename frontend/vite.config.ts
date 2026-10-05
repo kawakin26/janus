@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // Vite の設定。
 // server.proxy は「開発サーバー専用」の設定で、本番ビルド（vite build）の成果物には影響しない。
@@ -8,7 +9,7 @@ import react from '@vitejs/plugin-react'
 // Django バックエンド（http://localhost:8000）へ転送し、CORS 設定を触らずに開発できるようにする。
 // 実際の API クライアント（RestClient）実装はタスク 8。
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     proxy: {
       '/api': {
