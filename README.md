@@ -140,4 +140,8 @@ cd backend
 
 ## ライセンス
 
-未定。
+Janus 本体のコードは [MIT License](LICENSE) で公開しています。
+
+本リポジトリには、第三者ソフトウェアを同梱（再配布）および依存として利用しています。これらには Janus の
+MIT ライセンスではなく、それぞれの元のライセンスが適用されます（draw.io は Apache-2.0、ezjww は MIT など）。
+詳細は [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) を参照してください。
