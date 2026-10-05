@@ -48,6 +48,19 @@ function normalizeSvgFilename(name: string): string | null {
   return `${stem}.svg`
 }
 
+// 画像/SVG 分岐の登録ファイル名を、元ファイルの拡張子へ強制補完する（CAD の .svg 補完と対称）。
+// 空入力なら null（元ファイル名のまま）。入力名が元拡張子（大小無視）で終われば二重付与しない。
+// 元ファイルに拡張子が無ければ入力名をそのまま返す（付けようがないため素直に）。
+function normalizeImageFilename(inputName: string, originalName: string): string | null {
+  const trimmed = inputName.trim()
+  if (trimmed === '') return null
+  const match = originalName.match(/\.[^.]+$/)
+  const ext = match ? match[0] : ''
+  if (ext === '') return trimmed
+  if (trimmed.toLowerCase().endsWith(ext.toLowerCase())) return trimmed
+  return `${trimmed}${ext}`
+}
+
 // 型付き変換失敗を日本語メッセージへ変換する（design 5.5）。失敗時は uploadAsset を呼ばない。
 function cadFailureMessage(err: unknown): string | null {
   if (err instanceof CadTooLargeError) {
@@ -158,6 +171,11 @@ function AssetLibraryPage() {
     event.preventDefault()
     if (selectedFile === null) return
     setUploadNotice(null)
+    // 送信開始時に、最下部のページ用メッセージ（一覧取得エラー・フォルダ作成/URL取得の status）も
+    // クリアして「古いメッセージが消え、新しい結果だけが出る」挙動にする。
+    // handleCreateFolder・handleAssetFileOpen 側の setMessage 呼び出しは変更しない。
+    setError(null)
+    setMessage(null)
     const alias = uploadAlias.trim()
 
     if (isCadFile(selectedFile.name)) {
@@ -193,9 +211,9 @@ function AssetLibraryPage() {
 
     // --- 画像/SVG 分岐: そのまま uploadAsset ---
     try {
-      const name = uploadFilename.trim()
+      const name = normalizeImageFilename(uploadFilename, selectedFile.name)
       const file =
-        name === ''
+        name === null
           ? selectedFile
           : new File([selectedFile], name, { type: selectedFile.type })
       const uploaded = await storage.uploadAsset({
@@ -312,6 +330,7 @@ function AssetLibraryPage() {
               className={styles.fileButton}
               onClick={() => fileInputRef.current?.click()}
               aria-describedby="asset-file-name"
+              disabled={cadConverting}
             >
               ファイルを選択
             </button>
@@ -328,7 +347,7 @@ function AssetLibraryPage() {
             id="asset-orientation"
             value={cadOrientation}
             onChange={(event) => setCadOrientation(Number(event.target.value) as CadOrientation)}
-            disabled={selectedFile === null || !isCadFile(selectedFile.name)}
+            disabled={selectedFile === null || !isCadFile(selectedFile.name) || cadConverting}
           >
             {CAD_ORIENTATIONS.map((deg) => (
               <option key={deg} value={deg}>
@@ -341,17 +360,23 @@ function AssetLibraryPage() {
             id="asset-filename"
             value={uploadFilename}
             onChange={(event) => setUploadFilename(event.target.value)}
+            disabled={cadConverting}
           />
           <label htmlFor="asset-alias">alias（任意）</label>
           <input
             id="asset-alias"
             value={uploadAlias}
             onChange={(event) => setUploadAlias(event.target.value)}
+            disabled={cadConverting}
           />
           <button type="submit" disabled={selectedFile === null || cadConverting}>
             アップロード
           </button>
-          {cadConverting && <span role="status">変換中...</span>}
+          {cadConverting && (
+            <span role="status" className={styles.spinner}>
+              変換中...
+            </span>
+          )}
           {uploadNotice !== null &&
             (uploadNotice.kind === 'error' ? (
               <p role="alert" className={styles.error}>

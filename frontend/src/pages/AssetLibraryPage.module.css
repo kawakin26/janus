@@ -59,6 +59,31 @@
   color: #666;
 }
 
+/* 変換中スピナーの強調表示（インラインで色は書かない）。 */
+.spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  color: #1f6feb;
+}
+
+.spinner::before {
+  content: '';
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spinner-rotate 0.7s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .list {
   padding-left: 1.5rem;
 }

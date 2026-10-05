@@ -333,6 +333,96 @@ describe('AssetLibraryPage', () => {
     expect((uploadedFile as File | null)?.name).toBe('logo.svg')
   })
 
+  it('送信開始時に前回のページメッセージ（フォルダ作成status）がクリアされる', async () => {
+    convertCadToSvgDispatch.mockReset()
+    const createFolder = vi.fn(async () => folder)
+    const uploadAsset = vi.fn(async () => asset)
+    renderPage({ createFolder, uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    // 先にフォルダ作成で旧メッセージを出す。
+    await user.type(screen.getByLabelText('新しいフォルダ名'), '図面')
+    await user.click(screen.getByRole('button', { name: 'フォルダ作成' }))
+    expect(await screen.findByText('フォルダを作成しました')).toBeInTheDocument()
+
+    // 画像アップロードを送信すると、旧メッセージが消えて成功 status だけになる。
+    const file = new File(['image'], 'plan.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('ファイル'), file)
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+
+    expect(await screen.findByText('アセットを登録しました')).toBeInTheDocument()
+    expect(screen.queryByText('フォルダを作成しました')).not.toBeInTheDocument()
+  })
+
+  it('画像で登録ファイル名を拡張子なし入力すると元拡張子を補完し、既に拡張子付きなら二重付与しない', async () => {
+    convertCadToSvgDispatch.mockReset()
+    let uploadedFile: File | null = null
+    const uploadAsset = vi.fn(
+      async (input: { folderId: number | null; file: File; alias?: string }) => {
+        uploadedFile = input.file
+        return asset
+      },
+    )
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+
+    // 拡張子なし入力 → 元拡張子 .png を補完。
+    const file = new File(['image'], 'photo.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('ファイル'), file)
+    await user.type(screen.getByLabelText('登録ファイル名（任意）'), '現場A')
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(1))
+    expect(convertCadToSvgDispatch).not.toHaveBeenCalled()
+    expect((uploadedFile as File | null)?.name).toBe('現場A.png')
+
+    // 既に正しい拡張子付きなら二重付与しない。
+    const file2 = new File(['image'], 'photo.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('ファイル'), file2)
+    await user.type(screen.getByLabelText('登録ファイル名（任意）'), '現場A.png')
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(2))
+    expect((uploadedFile as File | null)?.name).toBe('現場A.png')
+  })
+
+  it('変換中は入力・ボタンがdisabledになりスピナーが出て、完了後に解除される', async () => {
+    convertCadToSvgDispatch.mockReset()
+    let resolveConvert: (value: { svg: string; filename: string }) => void = () => {}
+    convertCadToSvgDispatch.mockImplementation(
+      () =>
+        new Promise<{ svg: string; filename: string }>((resolve) => {
+          resolveConvert = resolve
+        }),
+    )
+    const uploadAsset = vi.fn(async () => asset)
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const cadFile = new File(['dxf-bytes'], 'plan.dxf', { type: 'application/dxf' })
+    await user.upload(screen.getByLabelText('ファイル'), cadFile)
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+
+    // 変換中: 各入力・ボタンが disabled、スピナー表示。
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('変換中...'))
+    expect(screen.getByLabelText('登録ファイル名（任意）')).toBeDisabled()
+    expect(screen.getByLabelText('alias（任意）')).toBeDisabled()
+    expect(screen.getByLabelText('回転')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'ファイルを選択' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'アップロード' })).toBeDisabled()
+
+    // 変換完了 → アップロード完了後に解除される。
+    resolveConvert({ svg: '<svg xmlns="http://www.w3.org/2000/svg"/>', filename: 'plan.svg' })
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'ファイルを選択' })).toBeEnabled(),
+    )
+    expect(screen.getByLabelText('alias（任意）')).toBeEnabled()
+    expect(screen.getByLabelText('登録ファイル名（任意）')).toBeEnabled()
+  })
+
   it('成功メッセージはrole=status（赤文字でない）で表示する', async () => {
     convertCadToSvgDispatch.mockReset()
     const uploadAsset = vi.fn(async () => asset)
