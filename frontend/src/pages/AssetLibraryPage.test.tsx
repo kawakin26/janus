@@ -9,6 +9,12 @@ import { StorageProvider } from '../storage/StorageProvider'
 import { AuthProvider } from '../auth/AuthContext'
 import { createStubStorage, sampleUser } from '../test/stub-storage'
 import type { Asset, Folder } from '../storage/types'
+import { CadUnsupportedError } from '../markdown/custom-map/cad/convert'
+
+const convertCadToSvgDispatch = vi.hoisted(() => vi.fn())
+vi.mock('../markdown/custom-map/cad/convert-dispatch', () => ({
+  convertCadToSvgDispatch,
+}))
 
 const folder: Folder = {
   id: 4,
@@ -86,5 +92,49 @@ describe('AssetLibraryPage', () => {
     )
     expect(await screen.findByText('登録URL:', { exact: false })).toBeInTheDocument()
     expect(client).not.toHaveProperty('restClient')
+  })
+
+  it('CAD変換成功時はimage/svg+xmlの.svgファイルをuploadAssetへ渡す', async () => {
+    convertCadToSvgDispatch.mockReset()
+    convertCadToSvgDispatch.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      filename: 'plan.svg',
+    })
+    let uploadedFile: File | null = null
+    const uploadAsset = vi.fn(async (input: { folderId: number | null; file: File; alias?: string }) => {
+      uploadedFile = input.file
+      return asset
+    })
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const cadFile = new File(['dxf-bytes'], 'plan.dxf', { type: 'application/dxf' })
+    await user.upload(screen.getByLabelText('CADファイル（.jww / .dxf）'), cadFile)
+    await user.selectOptions(screen.getByLabelText('回転'), '90')
+    await user.click(screen.getByRole('button', { name: '変換して登録' }))
+
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(1))
+    expect(convertCadToSvgDispatch).toHaveBeenCalledWith(cadFile, 90)
+    const file = uploadedFile as File | null
+    expect(file).toBeInstanceOf(File)
+    expect(file?.type).toBe('image/svg+xml')
+    expect(file?.name.endsWith('.svg')).toBe(true)
+  })
+
+  it('CAD変換失敗時は誘導メッセージを表示しuploadAssetを呼ばない', async () => {
+    convertCadToSvgDispatch.mockReset()
+    convertCadToSvgDispatch.mockRejectedValue(new CadUnsupportedError('bad'))
+    const uploadAsset = vi.fn(async () => asset)
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const cadFile = new File(['nope'], 'plan.dxf', { type: 'application/dxf' })
+    await user.upload(screen.getByLabelText('CADファイル（.jww / .dxf）'), cadFile)
+    await user.click(screen.getByRole('button', { name: '変換して登録' }))
+
+    expect(await screen.findByText(/通常の画像\/SVG アップロードフォーム/)).toBeInTheDocument()
+    expect(uploadAsset).not.toHaveBeenCalled()
   })
 })

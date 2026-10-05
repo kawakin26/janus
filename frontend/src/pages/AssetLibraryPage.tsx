@@ -7,7 +7,42 @@ import AppLayout from '../components/AppLayout'
 import { useStorage } from '../storage/StorageProvider'
 import type { Asset, Folder } from '../storage/types'
 import { usePageError } from './use-page-error'
+import { convertCadToSvgDispatch } from '../markdown/custom-map/cad/convert-dispatch'
+import {
+  CadUnsupportedError,
+  CadTooLargeError,
+  CadTooManyEntitiesError,
+  CadConversionError,
+  CadEngineUnavailableError,
+  type CadOrientation,
+} from '../markdown/custom-map/cad/convert'
 import styles from './AssetLibraryPage.module.css'
+
+const CAD_ORIENTATIONS: CadOrientation[] = [0, 90, 180, 270]
+
+// 通常画像/SVG アップロードへの誘導文（design 5.5）。
+const CAD_UPLOAD_GUIDANCE =
+  '変換できない場合は、通常の画像/SVG アップロードフォームからご登録ください。'
+
+// 型付き変換失敗を日本語メッセージへ変換する（design 5.5）。失敗時は uploadAsset を呼ばない。
+function cadFailureMessage(err: unknown): string | null {
+  if (err instanceof CadTooLargeError) {
+    return `ファイルサイズが上限を超えています。${CAD_UPLOAD_GUIDANCE}`
+  }
+  if (err instanceof CadUnsupportedError) {
+    return `対応していないファイルです（.jww / .dxf のみ変換できます）。${CAD_UPLOAD_GUIDANCE}`
+  }
+  if (err instanceof CadTooManyEntitiesError) {
+    return `図面のエンティティ数が上限を超えています。${CAD_UPLOAD_GUIDANCE}`
+  }
+  if (err instanceof CadEngineUnavailableError) {
+    return `この環境では CAD 変換を実行できません。${CAD_UPLOAD_GUIDANCE}`
+  }
+  if (err instanceof CadConversionError) {
+    return `CAD の変換に失敗しました。${CAD_UPLOAD_GUIDANCE}`
+  }
+  return null
+}
 
 function AssetLibraryPage() {
   const storage = useStorage()
@@ -20,6 +55,9 @@ function AssetLibraryPage() {
   const [folderName, setFolderName] = useState('')
   const [alias, setAlias] = useState('')
   const [file, setFile] = useState<File | null>(null)
+  const [cadFile, setCadFile] = useState<File | null>(null)
+  const [cadOrientation, setCadOrientation] = useState<CadOrientation>(0)
+  const [cadConverting, setCadConverting] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [uploadedAsset, setUploadedAsset] = useState<Asset | null>(null)
   const [assetUrls, setAssetUrls] = useState<Record<number, string>>({})
@@ -103,6 +141,47 @@ function AssetLibraryPage() {
     }
   }
 
+  // CAD（.jww / .dxf）をブラウザ上で SVG に変換し、既存の uploadAsset で登録する。
+  // 変換そのものの失敗（型付きエラー）では uploadAsset を呼ばない（サーバー副作用ゼロ）。
+  const handleCadConvertUpload = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const form = event.currentTarget
+    if (cadFile === null) return
+    setMessage(null)
+    setCadConverting(true)
+    let converted: { svg: string; filename: string }
+    try {
+      converted = await convertCadToSvgDispatch(cadFile, cadOrientation)
+    } catch (err) {
+      const failure = cadFailureMessage(err)
+      setMessage(failure ?? handleError(err, 'CAD の変換に失敗しました'))
+      setCadConverting(false)
+      return
+    }
+    try {
+      const svgFile = new File([converted.svg], converted.filename, { type: 'image/svg+xml' })
+      const uploaded = await storage.uploadAsset({
+        folderId,
+        file: svgFile,
+        ...(alias.trim() ? { alias: alias.trim() } : {}),
+      })
+      setAssets((current) =>
+        current.some((asset) => asset.id === uploaded.id) ? current : [...current, uploaded],
+      )
+      setUploadedAsset(uploaded)
+      setCadFile(null)
+      setCadOrientation(0)
+      setAlias('')
+      form.reset()
+      setMessage('アセットを登録しました')
+    } catch (err) {
+      // 409 を含む登録段階のエラーは既存の ApiError 分岐で処理する（変換失敗ではない）。
+      setMessage(handleError(err, 'アセットの登録に失敗しました'))
+    } finally {
+      setCadConverting(false)
+    }
+  }
+
   const handleAssetFileOpen = async (asset: Asset) => {
     try {
       const url = await storage.getAssetFileUrl(asset)
@@ -169,6 +248,31 @@ function AssetLibraryPage() {
           <button type="submit" disabled={file === null}>
             アップロード
           </button>
+        </form>
+        <form onSubmit={handleCadConvertUpload} className={styles.form}>
+          <label htmlFor="cad-file">CADファイル（.jww / .dxf）</label>
+          <input
+            id="cad-file"
+            type="file"
+            accept=".jww,.dxf"
+            onChange={(event) => setCadFile(event.target.files?.[0] ?? null)}
+          />
+          <label htmlFor="cad-orientation">回転</label>
+          <select
+            id="cad-orientation"
+            value={cadOrientation}
+            onChange={(event) => setCadOrientation(Number(event.target.value) as CadOrientation)}
+          >
+            {CAD_ORIENTATIONS.map((deg) => (
+              <option key={deg} value={deg}>
+                {deg}°
+              </option>
+            ))}
+          </select>
+          <button type="submit" disabled={cadFile === null || cadConverting}>
+            変換して登録
+          </button>
+          {cadConverting && <span role="status">変換中...</span>}
         </form>
         {loading ? null : assets.length === 0 ? (
           <p>アセットがありません</p>
