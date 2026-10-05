@@ -6,7 +6,9 @@ import tseslint from 'typescript-eslint'
 
 // ESLint flat config（最小構成）。土台段階の静的検査のみ。
 export default tseslint.config(
-  { ignores: ['dist'] },
+  // dist はビルド成果物。src/vendor は wasm-pack 生成の第三者成果物（ezjww web ビルド）で
+  // 手を入れないため lint 対象外にする。
+  { ignores: ['dist', 'src/vendor'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],
