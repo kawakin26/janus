@@ -17,6 +17,7 @@ import { ApiError } from './types'
 import type {
   Asset,
   AssetRef,
+  Comment,
   DiffLine,
   EffectivePermission,
   Folder,
@@ -412,6 +413,65 @@ export class RestClient implements StorageClient {
       throw await this.toApiError(response)
     }
     return (await response.json()) as EffectivePermission
+  }
+
+  // -------------------------------------------------------------------------
+  // CommentClient（ブロック1）
+  //
+  // list/create は path クエリ（ページ view 権限）、update/delete は id（PK）。
+  // 403/400/409 は特別分岐せず toApiError 経由で ApiError(status) を throw する
+  // （401 とは status で自然に区別される）。404→null 変換はしない。
+  // -------------------------------------------------------------------------
+
+  async listComments(path: string): Promise<Comment[]> {
+    const response = await fetch(
+      this.url(`pages/comments?path=${encodeURIComponent(path)}`),
+      { method: 'GET', headers: { ...this.authHeaders() } },
+    )
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as Comment[]
+  }
+
+  async addComment(path: string, body: string): Promise<Comment> {
+    const response = await fetch(
+      this.url(`pages/comments?path=${encodeURIComponent(path)}`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+        body: JSON.stringify({ body }),
+      },
+    )
+    // 空・空白のみ・上限超過は 400。呼び出し側が status で判別できる。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as Comment
+  }
+
+  async updateComment(id: number, body: string): Promise<Comment> {
+    const response = await fetch(this.url(`pages/comments/${id}`), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...this.authHeaders() },
+      body: JSON.stringify({ body }),
+    })
+    // body のみ更新。権限不足は 403、不正本文は 400、存在しない id は 404（throw）。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as Comment
+  }
+
+  async deleteComment(id: number): Promise<void> {
+    const response = await fetch(this.url(`pages/comments/${id}`), {
+      method: 'DELETE',
+      headers: { ...this.authHeaders() },
+    })
+    // 204 で正常終了。非 2xx（403/404 含む）は throw。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
   }
 
   // -------------------------------------------------------------------------

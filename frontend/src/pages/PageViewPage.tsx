@@ -15,6 +15,7 @@ import { useStorage } from '../storage/StorageProvider'
 import MarkdownRenderer from '../markdown/MarkdownRenderer'
 import AppLayout from '../components/AppLayout'
 import Breadcrumbs from '../components/Breadcrumbs'
+import CommentSection from './CommentSection'
 import { usePageError } from './use-page-error'
 import styles from './PageViewPage.module.css'
 import { ApiError } from '../storage/types'
@@ -183,6 +184,7 @@ function PageViewPage() {
           </ul>
         </section>
       )}
+      <CommentSection path={path} canEdit={perm.edit} />
     </AppLayout>
   )
 }

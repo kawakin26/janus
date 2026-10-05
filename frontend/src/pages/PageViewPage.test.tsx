@@ -53,6 +53,7 @@ describe('PageViewPage', () => {
       getEffectivePermission: vi.fn(async () => ({ view: true, edit: true })),
       getPage: vi.fn(async () => makePage()),
       listChildren: vi.fn(async () => []),
+      listComments: vi.fn(async () => []),
     })
     renderView(client, '/view/docs/intro')
 
@@ -69,6 +70,7 @@ describe('PageViewPage', () => {
       getEffectivePermission: vi.fn(async () => ({ view: true, edit: true })),
       getPage: vi.fn(async () => null),
       listChildren: vi.fn(async () => []),
+      listComments: vi.fn(async () => []),
     })
     renderView(client, '/view/docs/missing')
 
@@ -88,6 +90,7 @@ describe('PageViewPage', () => {
         { path: '/docs/intro/a', title: '子A' },
         { path: '/docs/intro/b', title: '子B' },
       ]),
+      listComments: vi.fn(async () => []),
     })
     renderView(client, '/view/docs/intro')
 
@@ -107,6 +110,7 @@ describe('PageViewPage', () => {
       getEffectivePermission: vi.fn(async () => ({ view: true, edit: true })),
       getPage: vi.fn(async () => makePage()),
       listChildren: vi.fn(async () => []),
+      listComments: vi.fn(async () => []),
       deletePage,
     })
     vi.spyOn(window, 'confirm').mockReturnValue(true)

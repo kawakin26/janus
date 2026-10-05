@@ -233,3 +233,35 @@ class Revision(models.Model):
 
     def __str__(self) -> str:
         return f"{self.page_id}#{self.number}"
+
+
+class Comment(models.Model):
+    """ページに紐づくコメント（design 2.1 / 要件 3A-C-1）。
+
+    page は Page への FK（CASCADE: ページ削除でコメントも消える）。author は
+    監査性のため本文・日時を残す方針で SET_NULL（Revision.author と同じ・
+    PagePermission の CASCADE とは目的が異なる、design 2.1）。本文は TextField
+    とし、長さ上限（10,000 文字）はシリアライザ検証で課す（design 2.2）。
+    """
+
+    page = models.ForeignKey(
+        Page,
+        on_delete=models.CASCADE,
+        related_name="comments",
+    )
+    body = models.TextField()
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="comments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.page_id} comment#{self.pk}"

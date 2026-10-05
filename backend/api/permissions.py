@@ -125,6 +125,26 @@ def require_edit_permission_strict(request, path: str) -> Response | None:
     )
 
 
+def can_modify_comment(request, comment) -> bool:
+    """コメント編集/削除の可否を bool で返す（design 3.2・要件 3A-C-11）。
+
+    「投稿者本人 or ページ edit 権限 or 管理者」を 1 ヘルパに閉じ込める。独自の
+    階層判定は作らず既存ロジックのみ流用する。(1) superuser は常に True
+    （check_permission(edit) 内でも True になるが可読性のため先に見る）。(2) 投稿者
+    本人（author が null 化されている場合は本人判定不可 → False 側）。(3) 対象
+    ページの edit 権限（階層継承・Deny 優先・含意は check_permission に委譲）。
+
+    注意: ここでは require_page_permission を使わない。したがって拒否は
+    JANUS_HIDE_FORBIDDEN に関わらず常に固定 403（design 3.2）。check_permission は
+    応答生成をせず bool を返すだけで、404 すり替えを経由しない。
+    """
+    if request.user.is_superuser:
+        return True
+    if comment.author_id is not None and comment.author_id == request.user.id:
+        return True
+    return check_permission(request, comment.page.path, "edit")
+
+
 def compute_view_edit(request, path: str) -> dict:
     """現在ユーザーの path に対する {'view': bool, 'edit': bool} を返す（design 5.4）。
 

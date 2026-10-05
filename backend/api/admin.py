@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from .models import Asset, Folder, Page, PagePermission, Revision
+from .models import Asset, Comment, Folder, Page, PagePermission, Revision
 
 
 @admin.register(Page)
@@ -28,3 +28,8 @@ class PagePermissionAdmin(admin.ModelAdmin):
 @admin.register(Revision)
 class RevisionAdmin(admin.ModelAdmin):
     list_display = ("page", "number", "created_at", "author")
+
+
+@admin.register(Comment)
+class CommentAdmin(admin.ModelAdmin):
+    list_display = ("page", "author", "created_at", "updated_at")

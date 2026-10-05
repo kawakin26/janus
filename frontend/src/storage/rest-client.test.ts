@@ -696,6 +696,134 @@ describe('getEffectivePermission', () => {
   })
 })
 
+// --- CommentClient（ブロック1・T-REST） --------------------------------------
+
+const sampleComment = {
+  id: 42,
+  body: '最初のコメント',
+  author: sampleUser,
+  created_at: '2024-01-03T00:00:00Z',
+  updated_at: '2024-01-03T00:00:00Z',
+}
+
+describe('listComments', () => {
+  it('200 で Comment[] を返す（?path=）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, [sampleComment]))
+    const client = new RestClient()
+    const result = await client.listComments('/docs/intro')
+    expect(result).toEqual([sampleComment])
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/comments?path=%2Fdocs%2Fintro')
+    expect(init.method).toBe('GET')
+  })
+
+  it('403 のとき ApiError(status=403) を throw する（401 と区別）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { detail: 'forbidden' }))
+    const client = new RestClient()
+    await expect(client.listComments('/secret')).rejects.toMatchObject({
+      status: 403,
+    })
+  })
+})
+
+describe('addComment', () => {
+  it('201 で Comment を返す（POST ?path= / body {body}）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(201, sampleComment))
+    const client = new RestClient()
+    const result = await client.addComment('/docs/intro', '最初のコメント')
+    expect(result).toEqual(sampleComment)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/comments?path=%2Fdocs%2Fintro')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ body: '最初のコメント' })
+  })
+
+  it('400 のとき ApiError(status=400) を throw する（空・上限超過）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(400, { detail: 'invalid' }))
+    const client = new RestClient()
+    await expect(client.addComment('/docs/intro', '')).rejects.toMatchObject({
+      status: 400,
+    })
+  })
+
+  it('403 のとき ApiError(status=403) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { detail: 'forbidden' }))
+    const client = new RestClient()
+    await expect(client.addComment('/secret', 'x')).rejects.toMatchObject({
+      status: 403,
+    })
+  })
+})
+
+describe('updateComment', () => {
+  it('200 で Comment を返す（PATCH /id・body {body}）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(200, { ...sampleComment, body: 'edited' }),
+    )
+    const client = new RestClient()
+    const result = await client.updateComment(42, 'edited')
+    expect(result.body).toBe('edited')
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/comments/42')
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(init.body)).toEqual({ body: 'edited' })
+  })
+
+  it('400 のとき ApiError(status=400) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(400, { detail: 'invalid' }))
+    const client = new RestClient()
+    await expect(client.updateComment(42, '   ')).rejects.toMatchObject({
+      status: 400,
+    })
+  })
+
+  it('403 のとき ApiError(status=403) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { detail: 'forbidden' }))
+    const client = new RestClient()
+    await expect(client.updateComment(42, 'x')).rejects.toMatchObject({
+      status: 403,
+    })
+  })
+
+  it('409 のとき ApiError(status=409) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(409, { detail: 'conflict' }))
+    const client = new RestClient()
+    await expect(client.updateComment(42, 'x')).rejects.toMatchObject({
+      status: 409,
+    })
+  })
+})
+
+describe('deleteComment', () => {
+  it('204 で正常終了する（DELETE /id）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(204, null))
+    const client = new RestClient()
+    await expect(client.deleteComment(42)).resolves.toBeUndefined()
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/comments/42')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('403 のとき ApiError(status=403) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { detail: 'forbidden' }))
+    const client = new RestClient()
+    await expect(client.deleteComment(42)).rejects.toMatchObject({
+      status: 403,
+    })
+  })
+})
+
 // --- 401 / search -------------------------------------------------------------
 
 describe('401 の扱い', () => {

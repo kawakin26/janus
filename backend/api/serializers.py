@@ -5,7 +5,9 @@ from django.contrib.auth.models import Group
 from django.urls import reverse
 from rest_framework import serializers
 
-from .models import Asset, Folder, Page, PagePermission, Revision
+from .models import Asset, Comment, Folder, Page, PagePermission, Revision
+
+COMMENT_BODY_MAX_LENGTH = 10000
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -73,6 +75,39 @@ class RevisionSerializer(serializers.ModelSerializer):
         model = Revision
         fields = ["id", "number", "created_at", "author", "body", "title"]
         read_only_fields = fields
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    """コメント 1 件の入出力（design 2.2）。本文検証は validate_body が所有する。
+
+    出力は {id, body, author, created_at, updated_at}（author は UserSerializer で
+    User | null）。id/author/created_at/updated_at は read-only、body のみ書込可。
+    PATCH（partial=True + body のみ）で created_at/author は不変。
+    """
+
+    author = UserSerializer(read_only=True)
+    # DRF CharField は既定で前後空白を除去する（trim_whitespace=True）。本文の上限は
+    # strip() 前の受領文字列の len() で課す（design 2.2）ため、トリムを無効化して
+    # validate_body に生の文字列を渡す。空判定も validate_body が strip() して行う。
+    body = serializers.CharField(trim_whitespace=False)
+
+    class Meta:
+        model = Comment
+        fields = ["id", "body", "author", "created_at", "updated_at"]
+        read_only_fields = ["id", "author", "created_at", "updated_at"]
+
+    def validate_body(self, value):
+        # 上限と空判定は別基準（design 2.2 / レビュー指摘 6）。
+        # (1) 上限: strip() 前の受領文字列の len()（コードポイント数、改行も 1 文字）
+        #     が 10,000 を超える（10,001 以上）なら 400。
+        if len(value) > COMMENT_BODY_MAX_LENGTH:
+            raise serializers.ValidationError(
+                f"本文は{COMMENT_BODY_MAX_LENGTH}文字以内で入力してください。"
+            )
+        # (2) 空判定: strip() 後が空（空文字・空白のみ）なら 400。
+        if not value.strip():
+            raise serializers.ValidationError("本文を入力してください。")
+        return value
 
 
 class FolderSerializer(serializers.ModelSerializer):

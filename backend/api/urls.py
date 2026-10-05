@@ -46,6 +46,16 @@ urlpatterns = [
         views.RevisionListView.as_view(),
         name="pages-revisions",
     ),
+    path(
+        "pages/comments/<int:pk>",
+        views.CommentDetailView.as_view(),
+        name="pages-comments-detail",
+    ),
+    path(
+        "pages/comments",
+        views.CommentListCreateView.as_view(),
+        name="pages-comments",
+    ),
     path("pages", views.PageDetailView.as_view(), name="pages"),
     path("folders", views.FolderListCreateView.as_view(), name="folders"),
     path("assets", views.AssetListCreateView.as_view(), name="assets"),

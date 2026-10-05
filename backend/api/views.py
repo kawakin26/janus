@@ -14,15 +14,18 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Asset, Folder, Page, PagePermission, Revision
+from .models import Asset, Comment, Folder, Page, PagePermission, Revision
 from .permissions import (
+    PERMISSION_DENIED_DETAIL,
     PERMISSION_ENTRY_NOT_FOUND_DETAIL,
+    can_modify_comment,
     compute_view_edit,
     require_edit_permission_strict,
     require_page_permission,
 )
 from .serializers import (
     AssetSerializer,
+    CommentSerializer,
     FolderSerializer,
     PagePermissionSerializer,
     PageSerializer,
@@ -409,6 +412,84 @@ class RevisionRestoreView(APIView):
             page, title=revision.title, body=revision.body, author=request.user
         )
         return Response(PageSerializer(page).data, status=status.HTTP_200_OK)
+
+
+COMMENT_NOT_FOUND_DETAIL = "指定されたコメントが見つかりません。"
+
+
+class CommentListCreateView(APIView):
+    """コメント一覧取得・投稿（design 3.1）。いずれもページ view 権限。"""
+
+    def get(self, request, *args, **kwargs):
+        path = normalize_path(request.query_params.get("path"))
+        # 権限 → 存在の順（design 3.1 / 5.2）。view 拒否は実在を参照せず 403/404。
+        denied = require_page_permission(request, path, "view")
+        if denied is not None:
+            return denied
+        page = Page.objects.filter(path=path).first()
+        if page is None:
+            return Response({"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND)
+        # 全件・作成日時昇順（Meta.ordering=["created_at", "id"]、ページングは将来課題）。
+        comments = page.comments.all()
+        return Response(
+            CommentSerializer(comments, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+
+    def post(self, request, *args, **kwargs):
+        path = normalize_path(request.data.get("path"))
+        denied = require_page_permission(request, path, "view")
+        if denied is not None:
+            return denied
+        page = Page.objects.filter(path=path).first()
+        if page is None:
+            return Response({"detail": PAGE_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND)
+        serializer = CommentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        # author=request.user を注入して作成（body 以外は read-only）。
+        comment = serializer.save(page=page, author=request.user)
+        return Response(
+            CommentSerializer(comment).data, status=status.HTTP_201_CREATED
+        )
+
+
+class CommentDetailView(APIView):
+    """コメント本文編集・削除（design 3.1 / 3.2）。拒否は常に固定 403。"""
+
+    def _get_comment(self, pk):
+        return Comment.objects.filter(pk=pk).first()
+
+    def patch(self, request, pk, *args, **kwargs):
+        # ①コメント取得（無ければ 404）②編集権限判定（can_modify_comment）
+        # ③body のみ更新。require_page_permission は使わず拒否は固定 403（design 3.2）。
+        comment = self._get_comment(pk)
+        if comment is None:
+            return Response(
+                {"detail": COMMENT_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND
+            )
+        if not can_modify_comment(request, comment):
+            return Response(
+                {"detail": PERMISSION_DENIED_DETAIL}, status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = CommentSerializer(
+            comment, data={"body": request.data.get("body")}, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(CommentSerializer(comment).data, status=status.HTTP_200_OK)
+
+    def delete(self, request, pk, *args, **kwargs):
+        comment = self._get_comment(pk)
+        if comment is None:
+            return Response(
+                {"detail": COMMENT_NOT_FOUND_DETAIL}, status=status.HTTP_404_NOT_FOUND
+            )
+        if not can_modify_comment(request, comment):
+            return Response(
+                {"detail": PERMISSION_DENIED_DETAIL}, status=status.HTTP_403_FORBIDDEN
+            )
+        comment.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 ASSET_NOT_FOUND_DETAIL = "指定されたアセットが見つかりません。"

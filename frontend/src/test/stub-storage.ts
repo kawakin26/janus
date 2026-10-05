@@ -37,6 +37,10 @@ export interface StubStorageOverrides {
   updatePermission?: StorageClient['updatePermission']
   revokePermission?: StorageClient['revokePermission']
   getEffectivePermission?: StorageClient['getEffectivePermission']
+  listComments?: StorageClient['listComments']
+  addComment?: StorageClient['addComment']
+  updateComment?: StorageClient['updateComment']
+  deleteComment?: StorageClient['deleteComment']
 }
 
 /** 未指定メソッドはテスト中に呼ばれたことが分かるエラーを返す。 */
@@ -72,6 +76,10 @@ export function createStubStorage(overrides: StubStorageOverrides = {}): Storage
     revokePermission: overrides.revokePermission ?? notImplemented('revokePermission'),
     getEffectivePermission:
       overrides.getEffectivePermission ?? notImplemented('getEffectivePermission'),
+    listComments: overrides.listComments ?? notImplemented('listComments'),
+    addComment: overrides.addComment ?? notImplemented('addComment'),
+    updateComment: overrides.updateComment ?? notImplemented('updateComment'),
+    deleteComment: overrides.deleteComment ?? notImplemented('deleteComment'),
     search: notImplemented('search'),
   }
 }

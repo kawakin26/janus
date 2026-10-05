@@ -95,6 +95,15 @@ export interface DiffLine {
   line: string
 }
 
+/** コメント 1 件（CommentSerializer に一致）。author は null 化され得る。 */
+export interface Comment {
+  id: number
+  body: string
+  author: User | null
+  created_at: string
+  updated_at: string
+}
+
 /** 権限エントリ（PagePermissionSerializer に一致）。指定子はすべて number。 */
 export interface PermissionEntry {
   id: number
@@ -181,13 +190,26 @@ export interface SearchClient {
   search(query: string): Promise<SearchHit[]>
 }
 
+/** コメント契約（design 9.1）。一覧は作成日時昇順・全件。 */
+export interface CommentClient {
+  /** path のコメント一覧（作成日時昇順・全件）。 */
+  listComments(path: string): Promise<Comment[]>
+  /** コメントを投稿する。空・空白のみ・上限超過は 400（throw）。 */
+  addComment(path: string, body: string): Promise<Comment>
+  /** コメント本文を更新する。権限不足は 403、不正本文は 400（throw）。 */
+  updateComment(id: number, body: string): Promise<Comment>
+  /** コメントを削除する。権限不足は 403（throw）。 */
+  deleteComment(id: number): Promise<void>
+}
+
 /** ストレージ全体の契約（design 4 章）。 */
 export interface StorageClient
   extends AuthClient,
     PageClient,
     AssetClient,
     SearchClient,
-    PermissionClient {}
+    PermissionClient,
+    CommentClient {}
 
 // ---------------------------------------------------------------------------
 // エラー型（design 9 章）
