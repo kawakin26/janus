@@ -1,0 +1,100 @@
+.editor {
+  display: grid;
+  gap: 1rem;
+  max-width: 60rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.field label {
+  font-size: 0.85rem;
+  color: #444;
+}
+
+.preview {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #f6f6f6;
+  cursor: crosshair;
+  overflow: hidden;
+}
+
+.previewImage {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  cursor: grab;
+  touch-action: none;
+}
+
+.marker[data-selected='true'] {
+  outline: 2px solid #0b5fff;
+  outline-offset: 2px;
+}
+
+.placeholder {
+  padding: 2rem;
+  color: #666;
+  text-align: center;
+}
+
+.markerList {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.markerRow {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.markerRow[data-selected='true'] {
+  border-color: #0b5fff;
+}
+
+.inlineFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.photoList {
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+
+.photoList li {
+  margin: 0.25rem 0;
+}
+
+.error {
+  color: #b00020;
+}

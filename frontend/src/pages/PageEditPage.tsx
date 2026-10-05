@@ -21,6 +21,46 @@ import Breadcrumbs from '../components/Breadcrumbs'
 import { usePageError } from './use-page-error'
 import styles from './PageEditPage.module.css'
 import { ApiError } from '../storage/types'
+import { unified } from 'unified'
+import remarkParse from 'remark-parse'
+import remarkDirective from 'remark-directive'
+import { visit } from 'unist-util-visit'
+import type { Root } from 'mdast'
+import type { ContainerDirective } from 'mdast-util-directive'
+import MapEditor from '../markdown/custom-map/MapEditor'
+import { buildMapData } from '../markdown/custom-map/parse-map'
+import { serializeMapData } from '../markdown/custom-map/serialize-map'
+import { findCustomMapBlocks, replaceCustomMapBlock } from '../markdown/custom-map/map-block'
+import type { MapData } from '../markdown/custom-map/types'
+
+/**
+ * 本文中の index 番目の `:::custom-map` ブロックを buildMapData で MapData 化する。
+ * ブロックが見つからない/パースできない場合は null。
+ */
+function parseCustomMapBlock(blockText: string): MapData | null {
+  const tree = unified().use(remarkParse).use(remarkDirective).parse(blockText) as Root
+  let found: ContainerDirective | null = null
+  visit(tree, 'containerDirective', (node: ContainerDirective) => {
+    if (!found && node.name === 'custom-map') found = node
+  })
+  return found ? buildMapData(found) : null
+}
+
+/** 新規マップブロック（マーカーなし・参照なし）の初期 MapData。 */
+function emptyMapData(): MapData {
+  return {
+    assetRef: { specifiers: [] },
+    cx: 50,
+    cy: 50,
+    scale: 1,
+    restore: 15,
+    rotate: 0,
+    link: '',
+    pinSize: 12,
+    labelSize: 12,
+    markers: [],
+  }
+}
 
 function PageEditPage() {
   const splat = useParams()['*'] ?? ''
@@ -36,6 +76,57 @@ function PageEditPage() {
   const [body, setBody] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // 地図 GUI 編集の状態。mapEditing が null でなければエディタを開いている。
+  // blockIndex が null のときは本文末尾へ新規ブロックを追加するモード。
+  const [mapEditing, setMapEditing] = useState<{ blockIndex: number | null; data: MapData } | null>(
+    null,
+  )
+  const [mapEditError, setMapEditError] = useState<string | null>(null)
+
+  // 本文中の custom-map ブロック数（導線の出し分けに使う）。
+  const customMapBlockCount = findCustomMapBlocks(body).length
+
+  // 既存ブロックを GUI 編集で開く。パースできなければエラー表示。
+  const openMapBlock = (blockIndex: number) => {
+    setMapEditError(null)
+    const blocks = findCustomMapBlocks(body)
+    const block = blocks[blockIndex]
+    if (!block) return
+    const data = parseCustomMapBlock(body.slice(block.start, block.end))
+    if (data === null) {
+      setMapEditError('この地図ブロックを読み込めませんでした。')
+      return
+    }
+    setMapEditing({ blockIndex, data })
+  }
+
+  // 新規マップブロックを追加するモードで開く。
+  const openNewMapBlock = () => {
+    setMapEditError(null)
+    setMapEditing({ blockIndex: null, data: emptyMapData() })
+  }
+
+  // GUI 編集を本文へ反映する。対象ブロックだけを serializeMapData 出力で置換し、
+  // 本文の他テキストは保持する（§7.3）。新規は本文末尾へ追加する。
+  const applyMapEditing = () => {
+    if (mapEditing === null) return
+    const serialized = serializeMapData(mapEditing.data)
+    if (mapEditing.blockIndex === null) {
+      const needsSeparator = body.length > 0 && !body.endsWith('\n')
+      const prefix = body.length > 0 ? body + (needsSeparator ? '\n\n' : '\n') : ''
+      setBody(prefix + serialized + '\n')
+    } else {
+      const blocks = findCustomMapBlocks(body)
+      const block = blocks[mapEditing.blockIndex]
+      if (block) {
+        setBody(replaceCustomMapBlock(body, block, serialized))
+      }
+    }
+    setMapEditing(null)
+  }
+
+  const cancelMapEditing = () => setMapEditing(null)
 
   useEffect(() => {
     let active = true
@@ -134,6 +225,42 @@ function PageEditPage() {
             rows={20}
           />
         </div>
+
+        <section className={styles.field} aria-label="地図 GUI 編集">
+          {mapEditError !== null && (
+            <p role="alert" aria-live="assertive">
+              {mapEditError}
+            </p>
+          )}
+          {mapEditing === null ? (
+            <div className={styles.actions}>
+              <button type="button" onClick={openNewMapBlock}>
+                地図を追加
+              </button>
+              {Array.from({ length: customMapBlockCount }, (_, i) => (
+                <button key={i} type="button" onClick={() => openMapBlock(i)}>
+                  地図 {i + 1} を編集
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <MapEditor
+                mapData={mapEditing.data}
+                onChange={(next) => setMapEditing({ blockIndex: mapEditing.blockIndex, data: next })}
+              />
+              <div className={styles.actions}>
+                <button type="button" onClick={applyMapEditing}>
+                  地図を本文へ反映
+                </button>
+                <button type="button" onClick={cancelMapEditing}>
+                  地図編集をやめる
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
         <div className={styles.actions}>
           <button type="submit" disabled={submitting}>
             {submitting ? '保存中...' : '保存'}
