@@ -29,3 +29,17 @@
 .cancel {
   color: #555;
 }
+
+/* drawio embed エディタ（同梱 webapp を自オリジン iframe で開く）。 */
+.drawioEditor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.drawioFrame {
+  width: 100%;
+  height: 70vh;
+  min-height: 480px;
+  border: 1px solid #ccc;
+}

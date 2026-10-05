@@ -16,7 +16,9 @@ import remarkGfm from 'remark-gfm'
 import remarkDirective from 'remark-directive'
 import remarkDirectiveFallback from './remark-directive-fallback'
 import remarkCustomMap from './custom-map/remark-custom-map'
+import remarkDrawio from './drawio/remark-drawio'
 import CustomMapViewer from './custom-map/CustomMapViewer'
+import DrawioViewer from './drawio/DrawioViewer'
 import type { MapData } from './custom-map/types'
 
 export interface MarkdownRendererProps {
@@ -69,6 +71,12 @@ function buildComponents(): Components {
       if (mapData !== null) {
         return <CustomMapViewer mapData={mapData} />
       }
+      // drawio 記法は remarkDrawio が data-drawio 付きの div に変換する。
+      // その div を同梱 GraphViewer で描画する DrawioViewer へ差し替える（既存分岐は不変）。
+      const drawioXml = domProps['data-drawio']
+      if (typeof drawioXml === 'string') {
+        return <DrawioViewer xml={drawioXml} />
+      }
       return <div {...domProps}>{children}</div>
     },
   }
@@ -77,7 +85,14 @@ function buildComponents(): Components {
 // remarkPlugins は再レンダーで作り直さないようモジュールスコープで固定する。
 // 順序: custom-map を fallback の前に置き、custom-map 以外の未対応ディレクティブだけ
 // fallback がプレースホルダ化する（fallback は hName 既設を尊重するため共存できる）。
-const remarkPlugins = [remarkGfm, remarkDirective, remarkCustomMap, remarkDirectiveFallback]
+// drawio は custom-map の後・fallback の前に置く（fallback は hName 既設を尊重し drawio に触れない）。
+const remarkPlugins = [
+  remarkGfm,
+  remarkDirective,
+  remarkCustomMap,
+  remarkDrawio,
+  remarkDirectiveFallback,
+]
 
 /**
  * Markdown 本文を安全に（生 HTML 無効で）レンダリングする。

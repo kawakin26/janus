@@ -79,4 +79,59 @@ describe('MarkdownRenderer', () => {
     const { container } = render(<MarkdownRenderer body={''} />)
     expect(container).toBeEmptyDOMElement()
   })
+
+  // ---- drawio（タスク 16 / FEAT-003）----
+  // jsdom では同梱 GraphViewer の実描画は走らないため、data-drawio 分岐での
+  // DrawioViewer コンテナ生成と、既存記法との共存非破壊を検証する（描画結果でなく分岐・生成）。
+
+  it('drawio を DrawioViewer コンテナとして描画する', () => {
+    const body = ':::drawio\n```xml\n<mxGraphModel/>\n```\n:::'
+    const { container } = render(<MarkdownRenderer body={body} />)
+    // data-drawio は専用コンテナへ差し替わり、素の data-drawio 属性は残らない。
+    expect(container.querySelector('[data-drawio-container="true"]')).not.toBeNull()
+    expect(container.querySelector('[data-drawio]')).toBeNull()
+  })
+
+  it('drawio と custom-map と GFM が共存して壊れない', () => {
+    const body = [
+      '# 見出し',
+      '',
+      ':::drawio',
+      '```xml',
+      '<mxGraphModel/>',
+      '```',
+      ':::',
+      '',
+      ':::custom-map{folder="maps" filename="map.png"}',
+      '',
+      '- x=10 y=20 label="A"',
+      ':::',
+      '',
+      '| 名前 | 値 |',
+      '| --- | --- |',
+      '| foo | 1 |',
+    ].join('\n')
+    const { container } = render(
+      <StorageProvider client={createStubStorage({ resolveAssetUrl: async () => null })}>
+        <MemoryRouter>
+          <AuthProvider>
+            <MarkdownRenderer body={body} />
+          </AuthProvider>
+        </MemoryRouter>
+      </StorageProvider>,
+    )
+    // drawio は専用コンテナ、custom-map は従来どおりビューアボタン、GFM 表は table。
+    expect(container.querySelector('[data-drawio-container="true"]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'マップを開く' })).toBeInTheDocument()
+    expect(container.querySelector('table')).not.toBeNull()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('見出し')
+  })
+
+  it('drawio の XML 内に生 HTML があっても実要素化しない（生 HTML 無効維持）', () => {
+    const body = ':::drawio\n```xml\n<mxGraphModel><script>alert(1)</script></mxGraphModel>\n```\n:::'
+    const { container } = render(<MarkdownRenderer body={body} />)
+    // コンテナは生成されるが、XML 本文は属性/設定として渡るだけで script 要素は生成されない。
+    expect(container.querySelector('[data-drawio-container="true"]')).not.toBeNull()
+    expect(container.querySelector('script')).toBeNull()
+  })
 })

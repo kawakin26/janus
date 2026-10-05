@@ -12,7 +12,7 @@
 // - 401/その他は usePageError で処理する（401 は logout＋/login 誘導）。
 // - 画面は useStorage() 契約経由のみでデータ操作する（RestClient 具象・fetch を直接使わない）。
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useStorage } from '../storage/StorageProvider'
@@ -32,6 +32,13 @@ import { buildMapData } from '../markdown/custom-map/parse-map'
 import { serializeMapData } from '../markdown/custom-map/serialize-map'
 import { findCustomMapBlocks, replaceCustomMapBlock } from '../markdown/custom-map/map-block'
 import type { MapData } from '../markdown/custom-map/types'
+import remarkDrawio from '../markdown/drawio/remark-drawio'
+import { serializeDrawio } from '../markdown/drawio/serialize-drawio'
+import { findDrawioBlocks, replaceDrawioBlock } from '../markdown/drawio/drawio-block'
+import {
+  buildLoadMessage,
+  createDrawioMessageHandler,
+} from '../markdown/drawio/drawio-embed'
 
 /**
  * 本文中の index 番目の `:::custom-map` ブロックを buildMapData で MapData 化する。
@@ -45,6 +52,26 @@ function parseCustomMapBlock(blockText: string): MapData | null {
   })
   return found ? buildMapData(found) : null
 }
+
+/**
+ * `:::drawio` ブロックテキストから mxGraph XML を取り出す。
+ * remark-drawio の unified パイプライン（serialize-drawio.test.ts と同流儀）で data-drawio を読む。
+ * パースできない/見つからない場合は空文字（＝新規図として開く）。
+ */
+function parseDrawioBlock(blockText: string): string {
+  const tree = unified().use(remarkParse).use(remarkDirective).parse(blockText) as Root
+  remarkDrawio()(tree)
+  let xml = ''
+  visit(tree, 'containerDirective', (node: ContainerDirective) => {
+    if (node.name !== 'drawio') return
+    const value = node.data?.hProperties?.['data-drawio']
+    if (typeof value === 'string') xml = value
+  })
+  return xml
+}
+
+/** 同梱 webapp を embed モード（proto=json）で開く iframe の src（自オリジン・外部 CDN 不使用）。 */
+const DRAWIO_EMBED_SRC = '/drawio/webapp/index.html?embed=1&proto=json&spin=1&libraries=0&noExitBtn=0'
 
 /** 新規マップブロック（マーカーなし・参照なし）の初期 MapData。 */
 function emptyMapData(): MapData {
@@ -84,8 +111,20 @@ function PageEditPage() {
   )
   const [mapEditError, setMapEditError] = useState<string | null>(null)
 
+  // drawio GUI 編集の状態。drawioEditing が null でなければ embed iframe を開いている。
+  // blockIndex が null のときは本文末尾へ新規ブロックを追加するモード。xml は初期読込み用。
+  const [drawioEditing, setDrawioEditing] = useState<{
+    blockIndex: number | null
+    xml: string
+  } | null>(null)
+  // embed iframe への参照（load / exit メッセージ送信に使う）。
+  const drawioIframeRef = useRef<HTMLIFrameElement>(null)
+
   // 本文中の custom-map ブロック数（導線の出し分けに使う）。
   const customMapBlockCount = findCustomMapBlocks(body).length
+
+  // 本文中の drawio ブロック数（導線の出し分けに使う）。
+  const drawioBlockCount = findDrawioBlocks(body).length
 
   // 既存ブロックを GUI 編集で開く。パースできなければエラー表示。
   const openMapBlock = (blockIndex: number) => {
@@ -127,6 +166,69 @@ function PageEditPage() {
   }
 
   const cancelMapEditing = () => setMapEditing(null)
+
+  // 既存 drawio ブロックを embed エディタで開く。
+  const openDrawioBlock = (blockIndex: number) => {
+    const blocks = findDrawioBlocks(body)
+    const block = blocks[blockIndex]
+    if (!block) return
+    const xml = parseDrawioBlock(body.slice(block.start, block.end))
+    setDrawioEditing({ blockIndex, xml })
+  }
+
+  // 新規 drawio ブロックを追加するモードで開く（初期 XML は空）。
+  const openNewDrawioBlock = () => {
+    setDrawioEditing({ blockIndex: null, xml: '' })
+  }
+
+  const closeDrawioEditing = useCallback(() => setDrawioEditing(null), [])
+
+  // save 受信 XML を serialize-drawio でブロック化し本文へ反映する。
+  // 新規（blockIndex=null）は本文末尾へ追加、既存は対象ブロックのみ置換（§7.3 非破壊）。
+  const applyDrawioXml = useCallback(
+    (xml: string, blockIndex: number | null) => {
+      const serialized = serializeDrawio(xml)
+      setBody((prev) => {
+        if (blockIndex === null) {
+          const needsSeparator = prev.length > 0 && !prev.endsWith('\n')
+          const prefix = prev.length > 0 ? prev + (needsSeparator ? '\n\n' : '\n') : ''
+          return prefix + serialized + '\n'
+        }
+        const blocks = findDrawioBlocks(prev)
+        const block = blocks[blockIndex]
+        return block ? replaceDrawioBlock(prev, block, serialized) : prev
+      })
+    },
+    [],
+  )
+
+  // embed iframe の postMessage ハンドラ（proto=json）を window に登録する。
+  // init で既存 XML を load、save で本文へ反映、exit でクローズ。origin は自オリジン固定。
+  useEffect(() => {
+    if (drawioEditing === null) return
+    const { blockIndex, xml } = drawioEditing
+
+    const handler = createDrawioMessageHandler({
+      onInit: () => {
+        drawioIframeRef.current?.contentWindow?.postMessage(
+          buildLoadMessage(xml),
+          window.location.origin,
+        )
+      },
+      onSave: (savedXml, { exit }) => {
+        applyDrawioXml(savedXml, blockIndex)
+        if (exit) closeDrawioEditing()
+      },
+      onExit: () => {
+        closeDrawioEditing()
+      },
+    })
+
+    window.addEventListener('message', handler)
+    return () => {
+      window.removeEventListener('message', handler)
+    }
+  }, [drawioEditing, applyDrawioXml, closeDrawioEditing])
 
   useEffect(() => {
     let active = true
@@ -255,6 +357,34 @@ function PageEditPage() {
                 </button>
                 <button type="button" onClick={cancelMapEditing}>
                   地図編集をやめる
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className={styles.field} aria-label="drawio 描画 編集">
+          <div className={styles.actions}>
+            <button type="button" onClick={openNewDrawioBlock}>
+              描画を追加
+            </button>
+            {Array.from({ length: drawioBlockCount }, (_, i) => (
+              <button key={i} type="button" onClick={() => openDrawioBlock(i)}>
+                描画 {i + 1} を編集
+              </button>
+            ))}
+          </div>
+          {drawioEditing !== null && (
+            <div className={styles.drawioEditor}>
+              <iframe
+                ref={drawioIframeRef}
+                src={DRAWIO_EMBED_SRC}
+                title="drawio 描画エディタ"
+                className={styles.drawioFrame}
+              />
+              <div className={styles.actions}>
+                <button type="button" onClick={closeDrawioEditing}>
+                  描画編集を閉じる
                 </button>
               </div>
             </div>

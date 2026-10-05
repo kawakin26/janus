@@ -1,0 +1,9 @@
+Janus bundles the diagrams.net (draw.io) viewer and editor web application.
+
+draw.io / diagrams.net
+Copyright 2005-2024 JGraph Ltd, draw.io AG
+Licensed under the Apache License, Version 2.0 (see LICENSE in this directory).
+Source: https://github.com/jgraph/drawio (release v32.0.2)
+
+The bundled files under public/drawio/ are redistributed unmodified from the
+above source. No endorsement by JGraph Ltd / draw.io AG is implied.

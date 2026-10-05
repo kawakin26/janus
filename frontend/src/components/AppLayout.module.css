@@ -29,6 +29,11 @@
   gap: 0.75rem;
 }
 
+.license {
+  font-size: 0.8rem;
+  color: #666;
+}
+
 .main {
   max-width: 48rem;
   margin: 0 auto;

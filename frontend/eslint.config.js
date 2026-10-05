@@ -7,8 +7,9 @@ import tseslint from 'typescript-eslint'
 // ESLint flat config（最小構成）。土台段階の静的検査のみ。
 export default tseslint.config(
   // dist はビルド成果物。src/vendor は wasm-pack 生成の第三者成果物（ezjww web ビルド）で
-  // 手を入れないため lint 対象外にする。
-  { ignores: ['dist', 'src/vendor'] },
+  // 手を入れないため lint 対象外にする。public/drawio は diagrams.net v32.0.2 の同梱配布物
+  // （viewer/webapp/Pre/PostConfig・ミニファイ済み第三者成果物）で静的配信のみ・手を入れないため同様に除外する。
+  { ignores: ['dist', 'src/vendor', 'public/drawio'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

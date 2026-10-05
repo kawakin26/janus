@@ -43,6 +43,14 @@ function AppLayout({ children }: AppLayoutProps) {
           <Link to="/assets">アセットライブラリ</Link>
         </nav>
         <div className={styles.account}>
+          {/* draw.io 同梱配布物（Apache-2.0 / diagrams.net v32.0.2）のライセンス導線。
+              静的配信物のため router の Link ではなく素の <a> で /drawio/LICENSE・/drawio/NOTICE を参照する。 */}
+          <a className={styles.license} href="/drawio/LICENSE" target="_blank" rel="noreferrer">
+            ライセンス
+          </a>
+          <a className={styles.license} href="/drawio/NOTICE" target="_blank" rel="noreferrer">
+            帰属表記
+          </a>
           <span>{user.username}</span>
           <button type="button" onClick={handleLogout}>
             ログアウト
