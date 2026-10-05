@@ -7,6 +7,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import AssetLibraryPage from './AssetLibraryPage'
 import { StorageProvider } from '../storage/StorageProvider'
 import { AuthProvider } from '../auth/AuthContext'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { createStubStorage, sampleUser } from '../test/stub-storage'
 import type { Asset, Folder } from '../storage/types'
 import { ApiError } from '../storage/types'
@@ -45,11 +46,13 @@ function renderPage(overrides: Parameters<typeof createStubStorage>[0] = {}) {
   const view = render(
     <StorageProvider client={client}>
       <AuthProvider>
-        <MemoryRouter initialEntries={['/assets']}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={['/assets']}>
           <Routes>
             <Route path="/assets" element={<AssetLibraryPage />} />
           </Routes>
-        </MemoryRouter>
+          </MemoryRouter>
+        </ThemeProvider>
       </AuthProvider>
     </StorageProvider>,
   )

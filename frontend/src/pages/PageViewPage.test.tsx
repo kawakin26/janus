@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { StorageProvider } from '../storage/StorageProvider'
 import { AuthProvider } from '../auth/AuthContext'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import PageViewPage from './PageViewPage'
 import { createStubStorage, sampleUser } from '../test/stub-storage'
 import type { Page, StorageClient } from '../storage/types'
@@ -35,12 +36,14 @@ function renderView(client: StorageClient, path: string) {
   render(
     <StorageProvider client={client}>
       <AuthProvider>
-        <MemoryRouter initialEntries={[path]}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route path="/" element={<div data-testid="home">ホーム</div>} />
             <Route path="/view/*" element={<PageViewPage />} />
           </Routes>
-        </MemoryRouter>
+          </MemoryRouter>
+        </ThemeProvider>
       </AuthProvider>
     </StorageProvider>,
   )

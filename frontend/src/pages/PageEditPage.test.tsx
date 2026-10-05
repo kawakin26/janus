@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { StorageProvider } from '../storage/StorageProvider'
 import { AuthProvider } from '../auth/AuthContext'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import PageEditPage from './PageEditPage'
 import { ApiError } from '../storage/types'
 import { createStubStorage, sampleUser } from '../test/stub-storage'
@@ -37,12 +38,14 @@ function renderEdit(client: StorageClient, path: string) {
   render(
     <StorageProvider client={client}>
       <AuthProvider>
-        <MemoryRouter initialEntries={[path]}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route path="/edit/*" element={<PageEditPage />} />
             <Route path="/view/*" element={<div data-testid="view">閲覧</div>} />
           </Routes>
-        </MemoryRouter>
+          </MemoryRouter>
+        </ThemeProvider>
       </AuthProvider>
     </StorageProvider>,
   )

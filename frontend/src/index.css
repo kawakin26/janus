@@ -83,4 +83,57 @@
     background-color: var(--color-surface);
     color: var(--color-fg);
   }
+
+  /* 移行期間中の操作可能要素の最小可視化（トークン駆動 base・設計 §5.2 の体裁と整合）。
+     Preflight は input/textarea/select/button の枠・背景・下線を外すため、各ページを
+     Tailwind 化するまでフォーム要素やボタン・リンクが素のテキストと区別できなくなる。
+     ここは「UA 既定への revert」ではなく、デザイントークンで与える base スタイルであり、
+     Zed 風の入力/ボタン体裁の土台として移行後も残せる（新方針＝Tailwind 統一性に整合）。
+     各ページ移行で個別のユーティリティ／@layer components が必要箇所を上書きする。 */
+
+  /* リンク: アクセント色 + 下線でテキストと区別する。 */
+  a {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* フォーム入力要素: 繊細な枠・角丸・余白・地色で input/textarea/select を可視化する。 */
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: var(--color-fg);
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.4rem 0.5rem;
+  }
+
+  /* 素の <button>（CSS Module 等で装飾されていないもの）に最小の体裁を与える。
+     装飾済みボタンは各要素のクラスが詳細度/レイヤ順でこれを上書きする。 */
+  button {
+    font: inherit;
+    cursor: pointer;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 0.4rem 0.75rem;
+    background-color: var(--color-surface-raised);
+    color: var(--color-fg);
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  /* フォーカス可視（キーボード操作時のみ・設計 §8・DS-8-3）。 */
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 1px;
+  }
 }

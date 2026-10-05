@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { StorageProvider } from '../storage/StorageProvider'
 import { AuthProvider } from '../auth/AuthContext'
+import { ThemeProvider } from '../theme/ThemeProvider'
 import PageHistoryPage from './PageHistoryPage'
 import { createStubStorage, sampleUser } from '../test/stub-storage'
 import { ApiError } from '../storage/types'
@@ -28,12 +29,14 @@ function renderHistory(client: StorageClient, path: string) {
   render(
     <StorageProvider client={client}>
       <AuthProvider>
-        <MemoryRouter initialEntries={[path]}>
+        <ThemeProvider>
+          <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route path="/view/*" element={<div data-testid="view">閲覧</div>} />
             <Route path="/history/*" element={<PageHistoryPage />} />
           </Routes>
-        </MemoryRouter>
+          </MemoryRouter>
+        </ThemeProvider>
       </AuthProvider>
     </StorageProvider>,
   )
