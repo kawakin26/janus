@@ -4,6 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Janus</title>
+    <!-- FOUC 回避（設計 §3.2 確定）。React マウント前に <html data-theme> を即設定し、
+         ダーク既定運用でも一瞬ライトが見える／誤テーマのちらつきを防ぐ。
+         キー名（janus-theme）・3 値・不正値正規化（許可リスト外→system）・matchMedia 不在時 light 既定は
+         src/theme/theme-core.ts（useTheme 側）と完全に同一ルール。自オリジンのインラインのみ（外部依存なし）。 -->
+    <script>
+      (function () {
+        try {
+          var allowed = ['system', 'light', 'dark']
+          var pref = 'system'
+          try {
+            var stored = window.localStorage.getItem('janus-theme')
+            if (allowed.indexOf(stored) !== -1) pref = stored
+          } catch (e) {
+            pref = 'system'
+          }
+          var effective
+          if (pref === 'light' || pref === 'dark') {
+            effective = pref
+          } else if (
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches
+          ) {
+            effective = 'dark'
+          } else {
+            effective = 'light'
+          }
+          document.documentElement.dataset.theme = effective
+        } catch (e) {
+          /* data-theme 未設定でも CSS 既定（ライト基準トークン）で描画されるため機能は壊れない。 */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

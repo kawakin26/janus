@@ -2,7 +2,6 @@
    @import "tailwindcss"; が Preflight（ブラウザ既定リセット）を読み込む。
    本刷新は「Tailwind としての統一性」を優先し、Preflight をそのまま活かす
    （導入前の UA 既定へ revert して埋め戻すような一時互換コードは書かない）。
-   デザイントークン（@theme の中身）と Zed 風の見た目はタスク 2 以降で投入する。
    地図ビューア（CustomMapViewer）は全要素がインラインスタイルで、インラインが
    勝つため、ここでのグローバル指定は地図の見た目を壊さない。 */
 @import "tailwindcss";
@@ -11,121 +10,77 @@
    指標 data-theme="dark" を祖先に持つ要素で dark: バリアントを効かせる。 */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-/* デザイントークン（設計 §2）。中身（色/フォント/余白/角丸/影）はタスク 2 で投入する。
-   このタスクでは枠のみ。ここで色トークンを作り込まない。 */
+/* デザイントークン（設計 §2・Zed docs 風）。
+   色は OKLCH（v4 標準・知覚的に均一で明度調整しやすい・Firefox 128+ 対応）。
+   @theme に定義した --color-* から Tailwind が bg-surface/text-fg/border-border/
+   text-primary/bg-danger 等のユーティリティを自動生成する。ここはライト基準値で、
+   ダークは下の @layer base の [data-theme="dark"] で --color-* を上書きする（設計 §3.1）。 */
 @theme {
-  /* タスク 2 で OKLCH パレット等を定義する。 */
+  /* 配色（設計 §2.1・ライト基準） */
+  --color-surface: oklch(0.99 0 0); /* 画面背景（ほぼ白） */
+  --color-surface-raised: oklch(0.975 0.002 260); /* カード/サイドバー背景 */
+  --color-fg: oklch(0.25 0.01 260); /* 本文テキスト */
+  --color-fg-muted: oklch(0.5 0.01 260); /* 補助テキスト／プレースホルダ */
+  --color-border: oklch(0.9 0.004 260); /* 繊細な境界線 */
+  --color-primary: oklch(0.55 0.17 255); /* アクセント/リンク／編集=青 */
+  --color-primary-contrast: oklch(0.99 0 0); /* primary 上の前景 */
+  --color-success: oklch(0.6 0.14 150); /* 成功 */
+  --color-warning: oklch(0.72 0.15 80); /* 警告 */
+  --color-danger: oklch(0.55 0.19 25); /* 削除/エラー=赤 */
+  --color-ring: oklch(0.55 0.17 255); /* フォーカスリング（= primary） */
+
+  /* タイポグラフィ（設計 §2.2） */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: 0.8rem;
+  --text-sm: 0.9rem;
+  --text-base: 1rem;
+  --text-lg: 1.1rem;
+  --text-xl: 1.3rem;
+  --text-2xl: 1.8rem;
+
+  --leading-normal: 1.6; /* UI 本文 */
+  --leading-relaxed: 1.7; /* Markdown 本文 */
+
+  /* 角丸（設計 §2.3・Zed 風の控えめな角丸） */
+  --radius-sm: 3px;
+  --radius: 4px;
+  --radius-md: 6px;
+
+  /* 影（設計 §2.3・控えめな薄い影のみ） */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.08);
 }
 
 @layer base {
-  /* ダーク時のトークン上書き枠（設計 §1.4/§3.1）。中身はタスク 2 で投入する。
-     [data-theme="dark"] { ... --color-* を上書き ... } */
-
-  /* 旧 index.css の最小グローバル（フォント/行高/地色・入力要素の体裁・Markdown
-     本文の可読性）を素直に移植する。これらはタスク 2 以降でトークン由来の
-     ユーティリティ／@theme へ順次置き換える。Preflight が外す UA 既定は
-     revert で埋め戻さない（新方針＝Tailwind 統一性優先）。 */
-  :root {
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-      Arial, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
-    line-height: 1.6;
-    color: #1a1a1a;
-    background-color: #ffffff;
+  /* ダーク時のトークン上書き（設計 §1.4/§3.1）。--color-* のみを §2.1 のダーク提案値へ差し替え、
+     タイポ/角丸/影トークンは共通のまま使う。<html data-theme> は FOUC スクリプトと ThemeProvider が
+     常に light/dark のどちらかに解決して書く（system は属性へ直接書かない）。 */
+  [data-theme="dark"] {
+    --color-surface: oklch(0.17 0.01 260); /* Zed 風の濃紺グレー */
+    --color-surface-raised: oklch(0.21 0.012 260);
+    --color-fg: oklch(0.92 0.005 260);
+    --color-fg-muted: oklch(0.68 0.008 260);
+    --color-border: oklch(0.3 0.01 260);
+    --color-primary: oklch(0.72 0.14 255);
+    --color-primary-contrast: oklch(0.17 0.01 260);
+    --color-success: oklch(0.72 0.15 150);
+    --color-warning: oklch(0.8 0.15 80);
+    --color-danger: oklch(0.68 0.19 25);
+    --color-ring: oklch(0.72 0.14 255);
   }
 
+  /* トークン駆動の最小グローバル。Preflight を土台にトークンで地色/前景/フォント/行間を与える。
+     導入前の UA 既定（リンク下線・リスト marker・見出し太字・段落余白等）の埋め戻しはしない
+     （新方針＝Tailwind 統一性優先）。要素ごとの体裁は各ページ移行（タスク 5 以降）で
+     ユーティリティ／@layer components に移す。 */
   body {
     margin: 0;
     padding: 0;
-  }
-
-  a {
-    color: #2563eb;
-  }
-
-  a:hover {
-    text-decoration: underline;
-  }
-
-  h1 {
-    font-size: 1.8rem;
-    font-weight: 600;
-    line-height: 1.3;
-    margin: 0 0 1rem;
-  }
-
-  h2 {
-    font-size: 1.3rem;
-    font-weight: 600;
-    line-height: 1.3;
-    margin: 1.5rem 0 0.75rem;
-  }
-
-  h3 {
-    font-size: 1.1rem;
-    font-weight: 600;
-    margin: 1.25rem 0 0.5rem;
-  }
-
-  input,
-  textarea {
-    font: inherit;
-    padding: 0.4rem 0.5rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-  }
-
-  input:focus,
-  textarea:focus {
-    outline: 2px solid #2563eb;
-    outline-offset: 0;
-  }
-
-  /* Markdown 本文（記事）の可読性。タスク 7 で .prose-janus へ移し替える。 */
-  article {
-    line-height: 1.7;
-  }
-
-  article h1,
-  article h2,
-  article h3 {
-    margin-top: 1.5rem;
-  }
-
-  article p {
-    margin: 0.75rem 0;
-  }
-
-  article ul {
-    list-style: disc;
-    padding-left: 1.5rem;
-  }
-
-  article ol {
-    list-style: decimal;
-    padding-left: 1.5rem;
-  }
-
-  article a {
-    word-break: break-word;
-  }
-
-  article code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    background-color: #f3f4f6;
-    padding: 0.1rem 0.3rem;
-    border-radius: 3px;
-    font-size: 0.9em;
-  }
-
-  article pre {
-    background-color: #f3f4f6;
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
-    overflow-x: auto;
-  }
-
-  article pre code {
-    background: none;
-    padding: 0;
+    font-family: var(--font-sans);
+    line-height: var(--leading-normal);
+    background-color: var(--color-surface);
+    color: var(--color-fg);
   }
 }
