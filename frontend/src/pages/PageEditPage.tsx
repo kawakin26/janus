@@ -119,6 +119,9 @@ function PageEditPage() {
   } | null>(null)
   // embed iframe への参照（load / exit メッセージ送信に使う）。
   const drawioIframeRef = useRef<HTMLIFrameElement>(null)
+  // drawio エディタを全画面オーバーレイ（モーダル）で表示するか。ホスト側 CSS のみで制御し、
+  // DRAWIO_EMBED_SRC・postMessage 契約・:::drawio 保存形式には一切触れない（問題1・案A）。
+  const [isDrawioFullscreen, setIsDrawioFullscreen] = useState(false)
 
   // 本文中の custom-map ブロック数（導線の出し分けに使う）。
   const customMapBlockCount = findCustomMapBlocks(body).length
@@ -181,7 +184,11 @@ function PageEditPage() {
     setDrawioEditing({ blockIndex: null, xml: '' })
   }
 
-  const closeDrawioEditing = useCallback(() => setDrawioEditing(null), [])
+  const closeDrawioEditing = useCallback(() => {
+    setDrawioEditing(null)
+    // 編集を閉じるときは全画面状態もリセットする。
+    setIsDrawioFullscreen(false)
+  }, [])
 
   // save 受信 XML を serialize-drawio でブロック化し本文へ反映する。
   // 新規（blockIndex=null）は本文末尾へ追加、既存は対象ブロックのみ置換（§7.3 非破壊）。
@@ -229,6 +236,18 @@ function PageEditPage() {
       window.removeEventListener('message', handler)
     }
   }, [drawioEditing, applyDrawioXml, closeDrawioEditing])
+
+  // 全画面オーバーレイ中は Esc キーで全画面を解除する（アクセシビリティ・最小実装）。
+  useEffect(() => {
+    if (!isDrawioFullscreen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsDrawioFullscreen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [isDrawioFullscreen])
 
   useEffect(() => {
     let active = true
@@ -375,7 +394,16 @@ function PageEditPage() {
             ))}
           </div>
           {drawioEditing !== null && (
-            <div className={styles.drawioEditor}>
+            <div
+              className={
+                isDrawioFullscreen
+                  ? `${styles.drawioEditor} ${styles.drawioEditorFullscreen}`
+                  : styles.drawioEditor
+              }
+              role={isDrawioFullscreen ? 'dialog' : undefined}
+              aria-modal={isDrawioFullscreen ? true : undefined}
+              aria-label={isDrawioFullscreen ? 'drawio 描画エディタ（全画面）' : undefined}
+            >
               <iframe
                 ref={drawioIframeRef}
                 src={DRAWIO_EMBED_SRC}
@@ -383,6 +411,12 @@ function PageEditPage() {
                 className={styles.drawioFrame}
               />
               <div className={styles.actions}>
+                <button
+                  type="button"
+                  onClick={() => setIsDrawioFullscreen((prev) => !prev)}
+                >
+                  {isDrawioFullscreen ? '全画面を解除' : '全画面表示'}
+                </button>
                 <button type="button" onClick={closeDrawioEditing}>
                   描画編集を閉じる
                 </button>
