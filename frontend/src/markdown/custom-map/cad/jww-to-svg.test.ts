@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll } from 'vitest';
-import { ensureJwwInit, isJwwFile, jwwToSvg } from './jww-to-svg';
+import { buildStyle, ensureJwwInit, isJwwFile, jwwToSvg } from './jww-to-svg';
 
 // 代表的な .jww は参考アセット(/home/kawakin/git/knowledge-base/temp/)に存在しないため、
 // init() 解決と isJwwFile のルーティング挙動を best-effort で検証する。実 JWW の
@@ -34,5 +34,18 @@ describe('jwwToSvg (ezjww WASM)', () => {
   it('JWW として認識できないバイト列は変換で例外になる', async () => {
     const notJww = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
     await expect(jwwToSvg(notJww)).rejects.toThrow();
+  });
+});
+
+// buildStyle は純粋関数で WASM 初期化に依存しないため独立 describe にする。
+// Jw_cad LCOLLOR の線色2(標準線)が light=黒 / dark=白 で出ることを回帰防止で検証する。
+describe('buildStyle 色値', () => {
+  it('light の標準線(.jc2)が黒、dark の標準線(.jc2)が白で出る', () => {
+    const style = buildStyle();
+    // light ルール(トップレベル)に黒。
+    expect(style).toContain('.jc2{stroke:#000000;}');
+    // dark ルールは @media (prefers-color-scheme: dark) ブロック内に白。
+    const darkBlock = style.slice(style.indexOf('@media (prefers-color-scheme: dark)'));
+    expect(darkBlock).toContain('.jc2{stroke:#ffffff;}');
   });
 });

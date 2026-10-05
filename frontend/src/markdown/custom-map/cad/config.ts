@@ -20,6 +20,8 @@ export interface CadConfig {
     darkColors: [string, string, string, string, string, string, string, string];
     /** SOLID がほぼ白のときのフォールバック塗り色。 */
     solidLight: string;
+    /** SOLID 塗りの黒背景用色（参考実装は未使用。config に保持のみ）。 */
+    solidDark: string;
     /** 補助線（線種 9）を描くか。 */
     drawAuxLines: boolean;
     /** 線種ダッシュ長の基準分母。 */
@@ -39,30 +41,33 @@ export const config: CadConfig = {
   maxEntities: 100000,
   maxFileBytes: 30 * 1024 * 1024,
   jww: {
-    // Jw_cad の既定ペン色に合わせた白背景向けの色。
-    //   jc1 黒 / jc2 赤 / jc3 緑 / jc4 青 / jc5 シアン / jc6 マゼンタ / jc7 黄緑 / jc8 灰
+    // Jw_cad の線色 1〜8（LCOLLOR）に準拠した白背景用ペン色。
+    // 索引 0 が線色1、索引 7 が線色8。white_back_settings.JWF の LCOLLOR 準拠。
+    // 線色2 は標準線（light=黒）。
     lightColors: [
-      '#000000',
-      '#ff0000',
-      '#008000',
-      '#0000ff',
-      '#00aaaa',
-      '#aa00aa',
-      '#808000',
-      '#808080',
+      '#00c0c0', // 1
+      '#000000', // 2 (標準線=黒)
+      '#00c000', // 3
+      '#c0c000', // 4
+      '#c000c0', // 5
+      '#0000ff', // 6
+      '#008080', // 7
+      '#ff0080', // 8
     ],
-    // 黒背景で視認できるよう明度を上げた同系色。
+    // 黒背景用ペン色。black_back_settings.JWF の LCOLLOR 準拠。
+    // 線色2 は標準線（dark=白）。
     darkColors: [
-      '#ffffff',
-      '#ff6060',
-      '#40ff40',
-      '#6090ff',
-      '#40ffff',
-      '#ff60ff',
-      '#dddd40',
-      '#c0c0c0',
+      '#00ffff', // 1
+      '#ffffff', // 2 (標準線=白)
+      '#00ff00', // 3
+      '#ffff00', // 4
+      '#c000c0', // 5
+      '#2020ff', // 6
+      '#008080', // 7
+      '#a00000', // 8
     ],
-    solidLight: '#c8c8c8',
+    solidLight: '#c0c0c0',
+    solidDark: '#404040',
     drawAuxLines: false,
     dashDivisor: 600,
     strokeDivisor: 1600,

@@ -148,7 +148,7 @@ const dashForStyle = (penStyle: number | undefined, unit: number): string | null
 };
 
 // SVG 内に埋め込む <style>。prefers-color-scheme で色を切り替える。
-const buildStyle = (): string => {
+export const buildStyle = (): string => {
   const light = config.jww.lightColors;
   const dark = config.jww.darkColors;
   const lightRules = light.map((c, i) => `.jc${i + 1}{stroke:${c};}`).join('');
