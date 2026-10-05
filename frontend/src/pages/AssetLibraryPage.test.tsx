@@ -9,6 +9,7 @@ import { StorageProvider } from '../storage/StorageProvider'
 import { AuthProvider } from '../auth/AuthContext'
 import { createStubStorage, sampleUser } from '../test/stub-storage'
 import type { Asset, Folder } from '../storage/types'
+import { ApiError } from '../storage/types'
 import { CadUnsupportedError } from '../markdown/custom-map/cad/convert'
 
 const convertCadToSvgDispatch = vi.hoisted(() => vi.fn())
@@ -72,7 +73,27 @@ describe('AssetLibraryPage', () => {
     expect(releaseAssetFileUrl).toHaveBeenCalledWith('blob:asset')
   })
 
-  it('フォルダ作成とalias付きアップロードをStorageClient経由で実行する', async () => {
+  it('自前ボタンと未選択プレースホルダを表示し、選択後はファイル名へ統合表示する（二重表示なし）', async () => {
+    convertCadToSvgDispatch.mockReset()
+    renderPage()
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    // 自前「ファイルを選択」ボタンが描画される。
+    expect(screen.getByRole('button', { name: 'ファイルを選択' })).toBeInTheDocument()
+    // 未選択時はボタン隣に未選択プレースホルダが 1 つ出て、「選択中:」は存在しない。
+    expect(screen.getByText('ファイルが選択されていません')).toBeInTheDocument()
+    expect(screen.queryByText(/選択中:/)).not.toBeInTheDocument()
+
+    // 選択後はファイル名表示へ切り替わり、未選択プレースホルダは消える（統合＝二重表示なし）。
+    const file = new File(['image'], 'plan.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('ファイル'), file)
+    expect(screen.getByText('選択中: plan.png')).toBeInTheDocument()
+    expect(screen.queryByText('ファイルが選択されていません')).not.toBeInTheDocument()
+  })
+
+  it('フォルダ作成とalias付き画像アップロードを統合フォームから実行する', async () => {
+    convertCadToSvgDispatch.mockReset()
     const createFolder = vi.fn(async () => folder)
     const uploadAsset = vi.fn(async () => asset)
     const { client } = renderPage({ createFolder, uploadAsset })
@@ -85,11 +106,14 @@ describe('AssetLibraryPage', () => {
 
     const file = new File(['image'], 'plan.png', { type: 'image/png' })
     await user.upload(screen.getByLabelText('ファイル'), file)
+    expect(screen.getByText('選択中: plan.png')).toBeInTheDocument()
     await user.type(screen.getByLabelText('alias（任意）'), 'floor-plan')
     await user.click(screen.getByRole('button', { name: 'アップロード' }))
     await waitFor(() =>
       expect(uploadAsset).toHaveBeenCalledWith({ folderId: null, file, alias: 'floor-plan' }),
     )
+    // 画像分岐では CAD 変換を通らない。
+    expect(convertCadToSvgDispatch).not.toHaveBeenCalled()
     expect(await screen.findByText('登録URL:', { exact: false })).toBeInTheDocument()
     expect(client).not.toHaveProperty('restClient')
   })
@@ -110,9 +134,9 @@ describe('AssetLibraryPage', () => {
 
     await screen.findByText('alice')
     const cadFile = new File(['dxf-bytes'], 'plan.dxf', { type: 'application/dxf' })
-    await user.upload(screen.getByLabelText('CADファイル（.jww / .dxf）'), cadFile)
+    await user.upload(screen.getByLabelText('ファイル'), cadFile)
     await user.selectOptions(screen.getByLabelText('回転'), '90')
-    await user.click(screen.getByRole('button', { name: '変換して登録' }))
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
 
     await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(1))
     expect(convertCadToSvgDispatch).toHaveBeenCalledWith(cadFile, 90)
@@ -122,7 +146,133 @@ describe('AssetLibraryPage', () => {
     expect(file?.name.endsWith('.svg')).toBe(true)
   })
 
-  it('CAD変換失敗時は誘導メッセージを表示しuploadAssetを呼ばない', async () => {
+  it('同じCADファイルを2回続けてアップロードしても2回目の変換が走る', async () => {
+    convertCadToSvgDispatch.mockReset()
+    convertCadToSvgDispatch.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      filename: 'plan.svg',
+    })
+    const uploadAsset = vi.fn(async () => asset)
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const input = screen.getByLabelText('ファイル')
+    const cadFile = new File(['dxf-bytes'], 'plan.dxf', { type: 'application/dxf' })
+
+    await user.upload(input, cadFile)
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+    await waitFor(() => expect(convertCadToSvgDispatch).toHaveBeenCalledTimes(1))
+
+    // 同一ファイルを選び直しても onChange が発火する（value クリアによる）。
+    await user.upload(input, cadFile)
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+    await waitFor(() => expect(convertCadToSvgDispatch).toHaveBeenCalledTimes(2))
+  })
+
+  it('409時はリネーム案内をフォーム内赤文字（role=alert）で表示し、重複登録を繰り返さない', async () => {
+    convertCadToSvgDispatch.mockReset()
+    convertCadToSvgDispatch.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      filename: 'plan.svg',
+    })
+    const uploadAsset = vi.fn(async () => {
+      throw new ApiError(409, '同一フォルダ内に同名のファイルまたは別名が既に存在します。')
+    })
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const cadFile = new File(['dxf-bytes'], 'plan.dxf', { type: 'application/dxf' })
+    await user.upload(screen.getByLabelText('ファイル'), cadFile)
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/登録ファイル名または alias を変えて再登録/)
+    expect(uploadAsset).toHaveBeenCalledTimes(1)
+  })
+
+  it('エラー時は選択中ファイルを維持し、リネームして再登録できる', async () => {
+    convertCadToSvgDispatch.mockReset()
+    convertCadToSvgDispatch.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      filename: 'plan.svg',
+    })
+    let callCount = 0
+    const uploadAsset = vi.fn(async () => {
+      callCount += 1
+      if (callCount === 1) {
+        throw new ApiError(409, '同一フォルダ内に同名のファイルまたは別名が既に存在します。')
+      }
+      return asset
+    })
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const cadFile = new File(['dxf-bytes'], 'plan.dxf', { type: 'application/dxf' })
+    await user.upload(screen.getByLabelText('ファイル'), cadFile)
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+
+    // 409 後も選択中表示が残り、再選択不要で送信ボタンが有効なまま。
+    await screen.findByRole('alert')
+    expect(screen.getByText('選択中: plan.dxf')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'アップロード' })).toBeEnabled()
+
+    // 登録ファイル名を変えて再送（再選択不要）。
+    await user.type(screen.getByLabelText('登録ファイル名（任意）'), 'plan-rev2')
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('登録URL:', { exact: false })).toBeInTheDocument()
+  })
+
+  it('成功時は選択がクリアされ、送信ボタンが無効に戻る', async () => {
+    convertCadToSvgDispatch.mockReset()
+    const uploadAsset = vi.fn(async () => asset)
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const file = new File(['image'], 'plan.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('ファイル'), file)
+    await user.type(screen.getByLabelText('alias（任意）'), 'floor-plan')
+    expect(screen.getByText('選択中: plan.png')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.queryByText('選択中: plan.png')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('alias（任意）')).toHaveValue('')
+    expect(screen.getByLabelText('登録ファイル名（任意）')).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'アップロード' })).toBeDisabled()
+  })
+
+  it('登録ファイル名を指定するとそのファイル名でuploadAssetへ渡す（CAD）', async () => {
+    convertCadToSvgDispatch.mockReset()
+    convertCadToSvgDispatch.mockResolvedValue({
+      svg: '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      filename: 'plan.svg',
+    })
+    let uploadedFile: File | null = null
+    const uploadAsset = vi.fn(
+      async (input: { folderId: number | null; file: File; alias?: string }) => {
+        uploadedFile = input.file
+        return asset
+      },
+    )
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const cadFile = new File(['dxf-bytes'], 'plan.dxf', { type: 'application/dxf' })
+    await user.upload(screen.getByLabelText('ファイル'), cadFile)
+    await user.type(screen.getByLabelText('登録ファイル名（任意）'), 'plan-rev2')
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(1))
+    expect((uploadedFile as File | null)?.name).toBe('plan-rev2.svg')
+  })
+
+  it('CAD変換失敗時は誘導メッセージをフォーム内赤文字で表示し、選択を維持しuploadAssetを呼ばない', async () => {
     convertCadToSvgDispatch.mockReset()
     convertCadToSvgDispatch.mockRejectedValue(new CadUnsupportedError('bad'))
     const uploadAsset = vi.fn(async () => asset)
@@ -131,10 +281,72 @@ describe('AssetLibraryPage', () => {
 
     await screen.findByText('alice')
     const cadFile = new File(['nope'], 'plan.dxf', { type: 'application/dxf' })
-    await user.upload(screen.getByLabelText('CADファイル（.jww / .dxf）'), cadFile)
-    await user.click(screen.getByRole('button', { name: '変換して登録' }))
+    await user.upload(screen.getByLabelText('ファイル'), cadFile)
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
 
-    expect(await screen.findByText(/通常の画像\/SVG アップロードフォーム/)).toBeInTheDocument()
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/通常の画像\/SVG アップロードフォーム/)
     expect(uploadAsset).not.toHaveBeenCalled()
+    // 変換失敗後も選択を維持する。
+    expect(screen.getByText('選択中: plan.dxf')).toBeInTheDocument()
+  })
+
+  it('回転selectは未選択・画像選択時は無効、CAD選択時のみ有効', async () => {
+    convertCadToSvgDispatch.mockReset()
+    renderPage()
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    // 未選択: 無効。
+    expect(screen.getByLabelText('回転')).toBeDisabled()
+
+    // 画像選択: 無効。
+    const image = new File(['image'], 'plan.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('ファイル'), image)
+    expect(screen.getByLabelText('回転')).toBeDisabled()
+
+    // CAD 選択: 有効。
+    const cadFile = new File(['dxf-bytes'], 'plan.dxf', { type: 'application/dxf' })
+    await user.upload(screen.getByLabelText('ファイル'), cadFile)
+    expect(screen.getByLabelText('回転')).toBeEnabled()
+  })
+
+  it('SVG（画像分岐）は変換を通らずそのままuploadAssetへ渡す', async () => {
+    convertCadToSvgDispatch.mockReset()
+    let uploadedFile: File | null = null
+    const uploadAsset = vi.fn(
+      async (input: { folderId: number | null; file: File; alias?: string }) => {
+        uploadedFile = input.file
+        return asset
+      },
+    )
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const svgFile = new File(['<svg/>'], 'logo.svg', { type: 'image/svg+xml' })
+    await user.upload(screen.getByLabelText('ファイル'), svgFile)
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(1))
+    expect(convertCadToSvgDispatch).not.toHaveBeenCalled()
+    expect((uploadedFile as File | null)?.name).toBe('logo.svg')
+  })
+
+  it('成功メッセージはrole=status（赤文字でない）で表示する', async () => {
+    convertCadToSvgDispatch.mockReset()
+    const uploadAsset = vi.fn(async () => asset)
+    renderPage({ uploadAsset })
+    const user = userEvent.setup()
+
+    await screen.findByText('alice')
+    const file = new File(['image'], 'plan.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText('ファイル'), file)
+    await user.click(screen.getByRole('button', { name: 'アップロード' }))
+
+    const status = await screen.findByText('アセットを登録しました')
+    expect(status).toHaveAttribute('role', 'status')
+    // エラーの role=alert は出ていない。
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
