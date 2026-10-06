@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useStorage } from '../../storage/StorageProvider'
 import { usePageError } from '../../pages/use-page-error'
+import { readMode } from '../../storage/mode'
 import type { AssetRef, Asset, Folder } from '../../storage/types'
 import type { MapData, MarkerData, PhotoData } from './types'
 import { clamp } from './map-utils'
@@ -54,6 +55,11 @@ function replaceMarker(markers: MarkerData[], index: number, next: MarkerData): 
 function MapEditor({ mapData, onChange }: MapEditorProps) {
   const storage = useStorage()
   const handleError = usePageError()
+
+  // ローカルモードのときだけカメラ撮影 UI を促す（capture="environment"）。
+  // readMode() が null/`server` の場合は capture なし（サーバー相当）に安全に倒す。
+  // レンダー時に 1 回評価すれば十分で、Context 導入や契約変更は行わない（タスク14 LM-6）。
+  const isLocalMode = readMode() === 'local'
 
   const [folders, setFolders] = useState<Folder[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
@@ -406,6 +412,7 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
                 className={PHOTO_INPUT_CLASS}
                 type="file"
                 accept="image/*"
+                capture={isLocalMode ? 'environment' : undefined}
                 onChange={(e) => {
                   const file = e.target.files?.[0]
                   if (file) void attachPhoto(i, file)

@@ -7,6 +7,7 @@ import PagePermissionPage from './pages/PagePermissionPage'
 import LoginPage from './pages/LoginPage'
 import NotFoundPage from './pages/NotFoundPage'
 import AssetLibraryPage from './pages/AssetLibraryPage'
+import SettingsPage from './pages/SettingsPage'
 import { RequireAuth } from './auth/RequireAuth'
 
 // ルート骨組み（要件 2-6）。
@@ -62,6 +63,14 @@ function App() {
         element={
           <RequireAuth>
             <AssetLibraryPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <RequireAuth>
+            <SettingsPage />
           </RequireAuth>
         }
       />

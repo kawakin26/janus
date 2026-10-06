@@ -27,6 +27,7 @@ export interface AppLayoutProps {
 const NAV_ITEMS: { to: string; label: string }[] = [
   { to: '/', label: 'ページ一覧' },
   { to: '/assets', label: 'アセットライブラリ' },
+  { to: '/settings', label: '設定' },
 ]
 
 // 共通ナビ本体。常設サイドバーとモバイルオーバーレイの双方で使う。

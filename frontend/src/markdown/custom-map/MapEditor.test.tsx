@@ -4,7 +4,7 @@
 // jsdom では画像の実レイアウトが得られないため、ピクセル座標依存のクリック配置は
 // getBoundingClientRect をスタブして検証する。写真添付は uploadAsset をスタブする。
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -14,6 +14,11 @@ import { AuthProvider } from '../../auth/AuthContext'
 import { createStubStorage } from '../../test/stub-storage'
 import type { Asset, Folder } from '../../storage/types'
 import type { MapData } from './types'
+import { readMode } from '../../storage/mode'
+
+// 動作モード判定はモジュールをモックして制御する（capture 属性の分岐検証用）。
+vi.mock('../../storage/mode', () => ({ readMode: vi.fn() }))
+const readModeMock = vi.mocked(readMode)
 
 const folder: Folder = { id: 1, parentId: null, name: '図面', created_at: '', updated_at: '' }
 const mapAsset: Asset = {
@@ -84,6 +89,11 @@ function renderEditor(
 }
 
 describe('MapEditor', () => {
+  beforeEach(() => {
+    // 既定はサーバー相当（null）。各テストで必要に応じて上書きする。
+    readModeMock.mockReturnValue(null)
+  })
+
   it('画像上クリックでマーカーを追加し onChange に座標付き MapData を返す', async () => {
     const { onChange } = renderEditor(baseMapData())
 
@@ -150,5 +160,38 @@ describe('MapEditor', () => {
     expect(
       await screen.findByText('マップ画像を選択すると、画像上をクリックしてマーカーを配置できます。'),
     ).toBeInTheDocument()
+  })
+
+  it('ローカルモードでは写真 input が capture="environment" を持つ', async () => {
+    readModeMock.mockReturnValue('local')
+    const mapData = baseMapData({
+      markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
+    })
+    renderEditor(mapData)
+
+    const fileInput = await screen.findByLabelText('参考写真を追加')
+    expect(fileInput.getAttribute('capture')).toBe('environment')
+  })
+
+  it('サーバーモードでは写真 input に capture 属性を持たない', async () => {
+    readModeMock.mockReturnValue('server')
+    const mapData = baseMapData({
+      markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
+    })
+    renderEditor(mapData)
+
+    const fileInput = await screen.findByLabelText('参考写真を追加')
+    expect(fileInput.getAttribute('capture')).toBeNull()
+  })
+
+  it('モード未設定（null）では写真 input に capture 属性を持たない', async () => {
+    readModeMock.mockReturnValue(null)
+    const mapData = baseMapData({
+      markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
+    })
+    renderEditor(mapData)
+
+    const fileInput = await screen.findByLabelText('参考写真を追加')
+    expect(fileInput.getAttribute('capture')).toBeNull()
   })
 })
