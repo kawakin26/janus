@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ThemeToggle } from '../theme/ThemeToggle'
+import PageTree from './sidebar/PageTree'
 
 export interface AppLayoutProps {
   children: ReactNode
@@ -39,30 +40,38 @@ function NavItems({
   firstItemRef?: React.Ref<HTMLAnchorElement>
 }) {
   return (
-    <ul className="flex flex-col gap-1">
-      {NAV_ITEMS.map((item, index) => {
-        const active = pathname === item.to
-        return (
-          <li key={item.to}>
-            <Link
-              ref={index === 0 ? firstItemRef : undefined}
-              to={item.to}
-              onClick={onNavigate}
-              aria-current={active ? 'page' : undefined}
-              className={
-                'block rounded px-3 py-1.5 text-sm no-underline ' +
-                'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring ' +
-                (active
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-fg hover:bg-surface')
-              }
-            >
-              {item.label}
-            </Link>
-          </li>
-        )
-      })}
-    </ul>
+    <>
+      <ul className="flex flex-col gap-1">
+        {NAV_ITEMS.map((item, index) => {
+          const active = pathname === item.to
+          return (
+            <li key={item.to}>
+              <Link
+                ref={index === 0 ? firstItemRef : undefined}
+                to={item.to}
+                onClick={onNavigate}
+                aria-current={active ? 'page' : undefined}
+                className={
+                  'block rounded px-3 py-1.5 text-sm no-underline ' +
+                  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring ' +
+                  (active
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-fg hover:bg-surface')
+                }
+              >
+                {item.label}
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+      {/* ページツリー（§3.10）。区切り + セクションラベル + ツリー本体を NAV_ITEMS 直下に置く。
+          NavItems は広幅常設ナビ・狭幅オーバーレイの両方で描画されるため、ツリーも両モードで出る。 */}
+      <div className="mt-3 pt-3 border-t border-border">
+        <p className="text-xs text-fg-muted">ページ</p>
+        <PageTree onNavigate={onNavigate} />
+      </div>
+    </>
   )
 }
 

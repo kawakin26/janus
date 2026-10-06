@@ -144,58 +144,63 @@ function PageViewPage() {
   return (
     <AppLayout>
       <Breadcrumbs path={path} />
-      <h1 className="text-2xl font-bold text-fg">{page.title}</h1>
-      <nav
-        aria-label="ページ操作"
-        className="my-6 flex flex-wrap items-center gap-3"
-      >
-        <Link to="/" className="mr-auto text-primary">
-          一覧へ
-        </Link>
-        {perm.view && (
-          <Link
-            to={`/history${path}`}
-            className="inline-flex items-center rounded border border-primary px-3 py-1.5 text-primary hover:bg-primary/10"
-          >
-            履歴
-          </Link>
-        )}
-        {perm.edit && (
-          <>
+      {/* D1: タイトルと操作群を同一 flex 行に。長いタイトルは折り返し・ボタン群は右端。 */}
+      <div className="my-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="min-w-0 text-2xl font-bold text-fg">{page.title}</h1>
+        <nav
+          aria-label="ページ操作"
+          className="flex flex-wrap items-center gap-2"
+        >
+          {perm.view && (
             <Link
-              to={`/edit${path}`}
-              className="inline-flex items-center rounded border border-primary px-3 py-1.5 text-primary hover:bg-primary/10"
+              to={`/history${path}`}
+              className="inline-flex items-center rounded border border-primary px-2 py-1 text-sm text-primary hover:bg-primary/10"
             >
-              編集
+              履歴
             </Link>
-            <Link
-              to={`/permissions${path}`}
-              className="inline-flex items-center rounded border border-primary px-3 py-1.5 text-primary hover:bg-primary/10"
-            >
-              権限設定
-            </Link>
-            <Button variant="danger" onClick={handleDelete}>
-              削除
-            </Button>
-          </>
-        )}
-      </nav>
+          )}
+          {perm.edit && (
+            <>
+              <Link
+                to={`/edit${path}`}
+                className="inline-flex items-center rounded border border-primary px-2 py-1 text-sm text-primary hover:bg-primary/10"
+              >
+                編集
+              </Link>
+              <Link
+                to={`/permissions${path}`}
+                className="inline-flex items-center rounded border border-primary px-2 py-1 text-sm text-primary hover:bg-primary/10"
+              >
+                権限設定
+              </Link>
+              <Button variant="danger" className="px-2 py-1 text-sm" onClick={handleDelete}>
+                削除
+              </Button>
+            </>
+          )}
+        </nav>
+      </div>
       <article className="prose-janus">
         <MarkdownRenderer body={page.body} />
       </article>
       {children.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-lg font-semibold text-fg">子ページ</h2>
-          <ul className="m-0 mt-2 list-none p-0">
-            {children.map((child) => (
-              <li key={child.path} className="border-b border-border py-2">
-                <Link to={`/view${child.path}`} className="text-primary">
-                  {child.title || child.path}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <>
+          {/* D5: 本文と子ページの境界 */}
+          <hr className="my-6 border-border" />
+          {/* D4: 子ページ節は本文より一段小さく */}
+          <section className="mt-8 text-sm">
+            <h2 className="text-base font-semibold text-fg">子ページ</h2>
+            <ul className="m-0 mt-2 list-none p-0">
+              {children.map((child) => (
+                <li key={child.path} className="border-b border-border py-2">
+                  <Link to={`/view${child.path}`} className="text-primary">
+                    {child.title || child.path}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </>
       )}
       <CommentSection path={path} canEdit={perm.edit} />
     </AppLayout>

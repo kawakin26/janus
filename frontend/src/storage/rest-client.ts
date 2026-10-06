@@ -23,6 +23,7 @@ import type {
   Folder,
   Page,
   PageSummary,
+  PageTreeNode,
   PermissionEntry,
   Revision,
   RevisionSummary,
@@ -215,6 +216,19 @@ export class RestClient implements StorageClient {
       throw await this.toApiError(response)
     }
     return (await response.json()) as PageSummary[]
+  }
+
+  async getPageTree(root: string = '/'): Promise<PageTreeNode[]> {
+    const response = await fetch(
+      this.url(`pages/tree?root=${encodeURIComponent(root)}`),
+      { method: 'GET', headers: { ...this.authHeaders() } },
+    )
+    // listChildren と同じく常に配列。404→null 変換はしない。
+    // 401 は toApiError 経由で ApiError(status=401) を throw する。
+    if (!response.ok) {
+      throw await this.toApiError(response)
+    }
+    return (await response.json()) as PageTreeNode[]
   }
 
   async createPage(input: {

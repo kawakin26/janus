@@ -76,11 +76,17 @@ function renderLayout(client: StorageClient, initialPath = '/') {
   )
 }
 
+function loggedInStub(overrides: Partial<Parameters<typeof createStubStorage>[0]> = {}) {
+  return createStubStorage({
+    currentUser: vi.fn(async () => sampleUser),
+    getPageTree: vi.fn(async () => []),
+    ...overrides,
+  })
+}
+
 describe('AppLayout（非破壊の既存挙動）', () => {
   it('ログイン時にヘッダー（Janus/username・ログアウト）とグローバルナビが出る', async () => {
-    const client = createStubStorage({
-      currentUser: vi.fn(async () => sampleUser),
-    })
+    const client = loggedInStub()
     renderLayout(client)
 
     const header = await screen.findByRole('banner')
@@ -99,9 +105,7 @@ describe('AppLayout（非破壊の既存挙動）', () => {
   })
 
   it('アクティブなナビ項目に aria-current="page" が付く', async () => {
-    const client = createStubStorage({
-      currentUser: vi.fn(async () => sampleUser),
-    })
+    const client = loggedInStub()
     renderLayout(client, '/')
 
     await screen.findByRole('banner')
@@ -130,10 +134,7 @@ describe('AppLayout（非破壊の既存挙動）', () => {
 
   it('ログアウト押下で logout() が呼ばれ /login へ遷移する', async () => {
     const logout = vi.fn(async () => {})
-    const client = createStubStorage({
-      currentUser: vi.fn(async () => sampleUser),
-      logout,
-    })
+    const client = loggedInStub({ logout })
     renderLayout(client)
 
     const button = await screen.findByRole('button', { name: 'ログアウト' })
@@ -149,9 +150,7 @@ describe('AppLayout（非破壊の既存挙動）', () => {
 
 describe('AppLayout（狭幅オーバーレイの a11y・design.md §4.3/§10）', () => {
   async function renderOpenedMenu() {
-    const client = createStubStorage({
-      currentUser: vi.fn(async () => sampleUser),
-    })
+    const client = loggedInStub()
     renderLayout(client)
     const hamburger = await screen.findByRole('button', { name: 'ナビゲーションを開く' })
     const user = userEvent.setup()
@@ -221,5 +220,28 @@ describe('AppLayout（狭幅オーバーレイの a11y・design.md §4.3/§10）
 
     await user.keyboard('{Escape}')
     expect(background.hasAttribute('inert')).toBe(false)
+  })
+})
+
+describe('AppLayout（ページツリー統合・design §3.10）', () => {
+  it('広幅: グローバルナビ内にページツリー（role="tree"）が描画される', async () => {
+    const client = loggedInStub()
+    renderLayout(client)
+
+    await screen.findByRole('banner')
+    const nav = screen.getByRole('navigation', { name: 'グローバル' })
+    expect(within(nav).getByRole('tree', { name: 'ページ' })).toBeInTheDocument()
+    expect(within(nav).getByText('ページ')).toBeInTheDocument()
+  })
+
+  it('狭幅オーバーレイ: dialog 内にもページツリーが描画される', async () => {
+    const client = loggedInStub()
+    renderLayout(client)
+    const hamburger = await screen.findByRole('button', { name: 'ナビゲーションを開く' })
+    const user = userEvent.setup()
+    await user.click(hamburger)
+
+    const dialog = screen.getByRole('dialog', { name: 'グローバルナビゲーション' })
+    expect(within(dialog).getByRole('tree', { name: 'ページ' })).toBeInTheDocument()
   })
 })

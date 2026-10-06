@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { RestClient } from './rest-client'
 import { ApiError } from './types'
-import type { Asset, Folder, Page, PageSummary, User } from './types'
+import type { Asset, Folder, Page, PageSummary, PageTreeNode, User } from './types'
 
 // --- テスト用フィクスチャ -----------------------------------------------------
 
@@ -180,6 +180,47 @@ describe('listChildren', () => {
     expect(result).toEqual(summaries)
     const [url] = fetchMock.mock.calls[0]
     expect(url).toBe('/api/pages/children?parent=%2Fdocs')
+  })
+})
+
+describe('getPageTree', () => {
+  const tree: PageTreeNode[] = [
+    {
+      path: '/docs',
+      title: 'docs',
+      hasPage: false,
+      hasChildren: true,
+      children: [
+        { path: '/docs/intro', title: 'Intro', hasPage: true, hasChildren: false, children: [] },
+      ],
+    },
+  ]
+
+  it('既定 root でツリー配列を返す（?root=%2F でエンコードされる）', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, tree))
+    const client = new RestClient()
+    const result = await client.getPageTree()
+    expect(result).toEqual(tree)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/tree?root=%2F')
+    expect(init.method).toBe('GET')
+  })
+
+  it('root 引数が ?root= でエンコードされる', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(200, []))
+    const client = new RestClient()
+    await client.getPageTree('/docs')
+    const [url] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/pages/tree?root=%2Fdocs')
+  })
+
+  it('401 のとき ApiError(status=401) を throw する', async () => {
+    const fetchMock = stubFetch()
+    fetchMock.mockResolvedValueOnce(mockResponse(401, { detail: 'unauthorized' }))
+    const client = new RestClient()
+    await expect(client.getPageTree()).rejects.toMatchObject({ status: 401 })
   })
 })
 

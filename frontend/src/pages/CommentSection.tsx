@@ -169,7 +169,7 @@ function CommentSection({ path, canEdit }: CommentSectionProps) {
   )
 
   return (
-    <section className="mt-8 pt-6 border-t border-border" aria-label="コメント">
+    <section className="mt-8 pt-6 border-t border-border text-sm" aria-label="コメント">
       <h2>コメント</h2>
 
       {loading ? (

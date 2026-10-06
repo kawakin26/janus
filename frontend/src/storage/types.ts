@@ -30,6 +30,15 @@ export interface PageSummary {
   title: string
 }
 
+/** ページツリーのノード（PageTreeNodeSerializer に一致）。children は再帰。 */
+export interface PageTreeNode {
+  path: string
+  title: string
+  hasPage: boolean
+  hasChildren: boolean
+  children: PageTreeNode[]
+}
+
 /** 論理アセットフォルダ。FolderSerializer の parentId に一致。 */
 export interface Folder {
   id: number
@@ -135,6 +144,8 @@ export interface AuthClient {
 export interface PageClient {
   getPage(path: string): Promise<Page | null>
   listChildren(parentPath: string): Promise<PageSummary[]>
+  /** ルート配下のページツリーを一括取得する（既定 root='/'）。ネスト構造。 */
+  getPageTree(root?: string): Promise<PageTreeNode[]>
   createPage(input: { path: string; title?: string; body: string }): Promise<Page>
   updatePage(path: string, input: { title?: string; body: string }): Promise<Page>
   deletePage(path: string): Promise<void>

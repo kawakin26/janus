@@ -17,6 +17,7 @@ export interface StubStorageOverrides {
   currentUser?: StorageClient['currentUser']
   getPage?: StorageClient['getPage']
   listChildren?: StorageClient['listChildren']
+  getPageTree?: StorageClient['getPageTree']
   createPage?: StorageClient['createPage']
   updatePage?: StorageClient['updatePage']
   deletePage?: StorageClient['deletePage']
@@ -55,6 +56,9 @@ export function createStubStorage(overrides: StubStorageOverrides = {}): Storage
     currentUser: overrides.currentUser ?? vi.fn(async () => null),
     getPage: overrides.getPage ?? notImplemented('getPage'),
     listChildren: overrides.listChildren ?? notImplemented('listChildren'),
+    // 既定は空ツリー。多くのページテストは AppLayout 経由で PageTree を描画するため、
+    // 未指定でも安全に解決する no-op 既定にする（logout 等と同じ流儀）。
+    getPageTree: overrides.getPageTree ?? vi.fn(async () => []),
     createPage: overrides.createPage ?? notImplemented('createPage'),
     updatePage: overrides.updatePage ?? notImplemented('updatePage'),
     deletePage: overrides.deletePage ?? notImplemented('deletePage'),
