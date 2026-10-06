@@ -188,4 +188,17 @@ describe('PageTree', () => {
     // 一括ボタン（兄弟要素）は壊れず残る。
     expect(screen.getByRole('button', { name: /全展開/ })).toBeInTheDocument()
   })
+
+  it('空 title フォールバック: title が空のページはパス末尾セグメントで表示される', async () => {
+    const emptyTitleTree: PageTreeNode[] = [
+      { path: '/map_library', title: '', hasPage: true, hasChildren: false, children: [] },
+      { path: '/docs', title: '  ', hasPage: true, hasChildren: false, children: [] },
+    ]
+    renderTree({ getPageTree: async () => emptyTitleTree })
+
+    // 空 title → 末尾セグメントにフォールバック。
+    expect(await screen.findByRole('link', { name: 'map_library' })).toBeInTheDocument()
+    // 空白のみ title も同様にフォールバック。
+    expect(screen.getByRole('link', { name: 'docs' })).toBeInTheDocument()
+  })
 })

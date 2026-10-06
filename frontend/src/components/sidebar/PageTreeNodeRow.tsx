@@ -20,6 +20,16 @@ function indentClass(depth: number): string {
   return INDENT_CLASSES[Math.min(depth, INDENT_CLASSES.length - 1)]
 }
 
+// 表示名: title が空/空白のみならパス末尾セグメントにフォールバックする。
+// タイトル未設定のページ（title=""）でもツリー上で識別できるようにする。
+// サーバーの仮想ノードも末尾セグメントを title にしており挙動が一貫する。
+function displayName(node: PageTreeNode): string {
+  const title = node.title.trim()
+  if (title !== '') return title
+  const segments = node.path.split('/').filter((s) => s !== '')
+  return segments.length > 0 ? segments[segments.length - 1] : node.path
+}
+
 export interface PageTreeNodeRowProps {
   node: PageTreeNode
   depth: number
@@ -81,11 +91,11 @@ export function PageTreeNodeRow({
               (current ? nameActive : nameNormal)
             }
           >
-            {node.title}
+            {displayName(node)}
           </Link>
         ) : (
           <span className={nameBase + ' text-fg-muted cursor-default'}>
-            {node.title}
+            {displayName(node)}
           </span>
         )}
       </div>
