@@ -62,7 +62,7 @@
     --color-surface-raised: oklch(0.21 0.012 260);
     --color-fg: oklch(0.92 0.005 260);
     --color-fg-muted: oklch(0.68 0.008 260);
-    --color-border: oklch(0.3 0.01 260);
+    --color-border: oklch(0.42 0.012 260); /* 背景(0.17)/raised(0.21)と十分な明度差を取り罫線を視認可能に */
     --color-primary: oklch(0.72 0.14 255);
     --color-primary-contrast: oklch(0.17 0.01 260);
     --color-success: oklch(0.72 0.15 150);
@@ -185,5 +185,20 @@
 
   .prose-janus pre code {
     @apply bg-transparent p-0; /* 旧 article pre code{background none; padding 0} */
+  }
+
+  /* GFM 表（remark-gfm が生成する table/thead/th/td）。Preflight は罫線・セル余白を
+     外すため、prose 内で罫線をトークン駆動（border-border）で明示的に与える。
+     UA 既定への revert ではなく prose の意図したスタイル。ダークは border-border が追従。 */
+  .prose-janus table {
+    @apply my-3 w-full border-collapse text-sm;
+  }
+
+  .prose-janus :where(th, td) {
+    @apply border border-border px-3 py-1.5 text-left align-top;
+  }
+
+  .prose-janus thead th {
+    @apply bg-surface-raised font-semibold;
   }
 }
