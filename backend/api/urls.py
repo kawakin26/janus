@@ -11,6 +11,7 @@ urlpatterns = [
     path("auth/logout", views.LogoutView.as_view(), name="auth-logout"),
     path("auth/me", views.MeView.as_view(), name="auth-me"),
     path("pages/children", views.PageChildrenView.as_view(), name="pages-children"),
+    path("pages/tree", views.PageTreeView.as_view(), name="pages-tree"),
     path(
         "pages/permissions/<int:pk>",
         views.PagePermissionDetailView.as_view(),

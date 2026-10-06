@@ -30,12 +30,13 @@ from .serializers import (
     PagePermissionSerializer,
     PageSerializer,
     PageSummarySerializer,
+    PageTreeNodeSerializer,
     RevisionSerializer,
     RevisionSummarySerializer,
     UserSerializer,
 )
 from .services import PathConflictError, save_page_body
-from .utils import normalize_path
+from .utils import ancestor_paths, normalize_path
 
 
 class LoginView(ObtainAuthToken):
@@ -161,6 +162,122 @@ class PageChildrenView(APIView):
             if require_page_permission(request, page.path, "view") is None
         ]
         return Response(PageSummarySerializer(visible, many=True).data, status=status.HTTP_200_OK)
+
+
+class PageTreeView(APIView):
+    """サブツリー一括取得（design 2.4）。root 配下の全階層をネスト JSON で返す。
+
+    PageChildrenView の「直下 1 階層」ロジックを全階層へ一般化する。純粋な文字列
+    処理（normalize_path/ancestor_paths 流儀）＋クエリ 1 回でツリーを組み、各ノード
+    に require_page_permission(view) を適用して枝刈りする。固定 detail は新設せず
+    常に 200 を返す（children と同一契約）。depth クエリは受理しても無視（予約）。
+    """
+
+    def get(self, request, *args, **kwargs):
+        # 1. root 正規化（既定 "/"）。不正値は normalize_path が安全な正規値へ畳む。
+        root = normalize_path(request.query_params.get("root"))
+        # 2. prefix（PageChildrenView と同一式）。
+        prefix = "/" if root == "/" else root + "/"
+        # 3. 配下の実ページを 1 回だけ取得（path 昇順）。root 自身はトップに含めない。
+        pages = list(Page.objects.filter(path__startswith=prefix).order_by("path"))
+        real_titles = {page.path: page.title for page in pages}
+
+        # 4-5. path キー dict でノード生成（中間＝仮想ノード含む）＋親子接続。
+        nodes = {}  # path -> {"path","title","hasPage","children": {child_path: node}}
+        roots = {}  # 親を持たない（root 直下）ノード。
+
+        def ensure(node_path):
+            if node_path not in nodes:
+                has_page = node_path in real_titles
+                title = (
+                    real_titles[node_path]
+                    if has_page
+                    else node_path.rsplit("/", 1)[-1]
+                )
+                nodes[node_path] = {
+                    "path": node_path,
+                    "title": title,
+                    "hasPage": has_page,
+                    "children": {},
+                }
+            return nodes[node_path]
+
+        for page in pages:
+            # root より深い祖先パス（自身含む）を "浅い→深い" 順に並べて親子を接続。
+            chain = [
+                ancestor
+                for ancestor in ancestor_paths(page.path)
+                if ancestor != root and ancestor.startswith(prefix)
+            ]
+            chain = list(reversed(chain))  # 近い順(深い→浅い) → 浅い→深い。
+            parent_path = None
+            for node_path in chain:
+                node = ensure(node_path)
+                if parent_path is None:
+                    roots[node_path] = node
+                else:
+                    nodes[parent_path]["children"][node_path] = node
+                parent_path = node_path
+
+        # 6. 権限枝刈り（design 2.5）: ルート側から下り、view 不可ノードで部分木を破棄。
+        def prune_perms(node):
+            if require_page_permission(request, node["path"], "view") is not None:
+                return None  # この部分木ごと破棄（祖先継承）。
+            kept = {}
+            for child_path, child in node["children"].items():
+                survived = prune_perms(child)
+                if survived is not None:
+                    kept[child_path] = survived
+            node["children"] = kept
+            return node
+
+        roots = {
+            path: node
+            for path, node in roots.items()
+            if prune_perms(node) is not None
+        }
+
+        # 7.5. ボトムアップの空仮想ノード剪定（design 2.4 手順 7.5／2.5）。
+        #   hasPage=False かつ children 空 のノードを親から外し上位へ伝播。
+        #   実ページ葉（hasPage=True かつ children 空）は残す。純粋な木操作。
+        def prune_empty(node):
+            kept = {}
+            for child_path, child in node["children"].items():
+                survived = prune_empty(child)
+                if survived is not None:
+                    kept[child_path] = survived
+            node["children"] = kept
+            if node["hasPage"] is False and len(node["children"]) == 0:
+                return None  # 空仮想ノードは除去。
+            return node
+
+        roots = {
+            path: node
+            for path, node in roots.items()
+            if prune_empty(node) is not None
+        }
+
+        # 7 + 7.5 後処理. children をパス昇順の配列化 ＆ hasChildren を確定（len>0）。
+        def finalize(node):
+            child_list = [
+                finalize(node["children"][child_path])
+                for child_path in sorted(node["children"].keys())
+            ]
+            return {
+                "path": node["path"],
+                "title": node["title"],
+                "hasPage": node["hasPage"],
+                "hasChildren": len(child_list) > 0,
+                "children": child_list,
+            }
+
+        root_list = [finalize(roots[path]) for path in sorted(roots.keys())]
+
+        # 8. シリアライズして 200。可視 0 件・非実在 root は 200 + []。
+        return Response(
+            PageTreeNodeSerializer(root_list, many=True).data,
+            status=status.HTTP_200_OK,
+        )
 
 
 class PagePermissionView(APIView):

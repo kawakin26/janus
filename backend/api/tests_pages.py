@@ -7,13 +7,33 @@ design.md 4 章 PageClient 契約 / 5 章 REST エンドポイント表 / 9 章�
 """
 
 from django.contrib.auth import get_user_model
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Page
+from .models import Page, PagePermission
 from .utils import normalize_path
+
+
+def _make_user_perm(path, user, action, effect):
+    """PagePermission（user 主体）を作る（tests_permissions.py の流儀を踏襲）。"""
+    return PagePermission.objects.create(
+        path=path,
+        principal_type="user",
+        user=user,
+        action=action,
+        effect=effect,
+    )
+
+
+def _flatten_tree(nodes):
+    """ネストツリーを全ノードのフラットなリストに展開する（再帰）。"""
+    out = []
+    for node in nodes:
+        out.append(node)
+        out.extend(_flatten_tree(node["children"]))
+    return out
 
 
 class NormalizePathTests(SimpleTestCase):
@@ -234,3 +254,180 @@ class PageChildrenTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         paths = {item["path"] for item in res.data}
         self.assertEqual(paths, {"/docs", "/blog"})
+
+
+class PageTreeTests(APITestCase):
+    """サブツリー一括取得 GET /api/pages/tree（design 2.9）を検証する。"""
+
+    def setUp(self):
+        self.user_model = get_user_model()
+        self.user = self.user_model.objects.create_user(
+            username="alice", password="test-pass-123"
+        )
+        self.client.force_authenticate(user=self.user)
+        self.tree_url = reverse("api:pages-tree")
+
+    def _create_pages(self, specs):
+        # specs: iterable of (path, title)。
+        for path, title in specs:
+            Page.objects.create(path=path, title=title, created_by=self.user)
+
+    def _node_by_path(self, nodes, path):
+        for node in _flatten_tree(nodes):
+            if node["path"] == path:
+                return node
+        return None
+
+    def test_nested_structure(self):
+        # 実ページで階層を作り ?root=/ がネスト構造を正しく返す。
+        self._create_pages(
+            [
+                ("/docs", "Docs"),
+                ("/docs/intro", "Intro"),
+                ("/docs/guide", "Guide"),
+                ("/docs/intro/deep", "Deep"),
+                ("/blog", "Blog"),
+            ]
+        )
+        res = self.client.get(self.tree_url, {"root": "/"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        # トップ配列は root 直下（/blog, /docs）をパス昇順で。root 自身は含まない。
+        top_paths = [node["path"] for node in res.data]
+        self.assertEqual(top_paths, ["/blog", "/docs"])
+        self.assertNotIn("/", top_paths)
+        # /docs 配下は /docs/guide → /docs/intro（パス昇順）。
+        docs = self._node_by_path(res.data, "/docs")
+        self.assertEqual([c["path"] for c in docs["children"]], ["/docs/guide", "/docs/intro"])
+        # /docs/intro 配下に /docs/intro/deep。
+        intro = self._node_by_path(res.data, "/docs/intro")
+        self.assertEqual([c["path"] for c in intro["children"]], ["/docs/intro/deep"])
+
+    def test_virtual_node(self):
+        # /docs 実ページ無し。/docs は hasPage=False・hasChildren=True・title="docs"。
+        self._create_pages(
+            [
+                ("/docs/intro", "Intro"),
+                ("/docs/guide", "Guide"),
+            ]
+        )
+        res = self.client.get(self.tree_url, {"root": "/"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        docs = self._node_by_path(res.data, "/docs")
+        self.assertIsNotNone(docs)
+        self.assertFalse(docs["hasPage"])
+        self.assertTrue(docs["hasChildren"])
+        self.assertEqual(docs["title"], "docs")
+        # 実ページ子は hasPage=True・title は Page.title。
+        intro = self._node_by_path(res.data, "/docs/intro")
+        self.assertTrue(intro["hasPage"])
+        self.assertEqual(intro["title"], "Intro")
+
+    def test_root_argument_scopes_subtree(self):
+        # ?root=/docs は /docs 配下のみ。/blog を含まず、/docs 自身もトップに出ない。
+        self._create_pages(
+            [
+                ("/docs", "Docs"),
+                ("/docs/intro", "Intro"),
+                ("/docs/guide", "Guide"),
+                ("/docs/intro/deep", "Deep"),
+                ("/blog", "Blog"),
+            ]
+        )
+        res = self.client.get(self.tree_url, {"root": "/docs"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        top_paths = [node["path"] for node in res.data]
+        self.assertEqual(top_paths, ["/docs/guide", "/docs/intro"])
+        all_paths = {node["path"] for node in _flatten_tree(res.data)}
+        self.assertNotIn("/blog", all_paths)
+        self.assertNotIn("/docs", all_paths)
+        intro = self._node_by_path(res.data, "/docs/intro")
+        self.assertEqual([c["path"] for c in intro["children"]], ["/docs/intro/deep"])
+
+    @override_settings(JANUS_DEFAULT_PAGE_VIEW=False, JANUS_DEFAULT_PAGE_EDIT=False)
+    def test_permission_filter_and_ancestor_inheritance(self):
+        # 既定非公開。明示 allow のノードのみ出現し、祖先不可の枝は子孫ごと欠落。
+        self._create_pages(
+            [
+                ("/docs", "Docs"),
+                ("/docs/intro", "Intro"),
+                ("/docs/guide", "Guide"),
+                ("/docs/intro/deep", "Deep"),
+                ("/blog", "Blog"),
+            ]
+        )
+        # /docs と /docs/guide を view allow。/docs/intro は deny（祖先 /docs は allow）。
+        _make_user_perm("/docs", self.user, "view", "allow")
+        _make_user_perm("/docs/guide", self.user, "view", "allow")
+        _make_user_perm("/docs/intro", self.user, "view", "deny")
+        res = self.client.get(self.tree_url, {"root": "/"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        all_paths = {node["path"] for node in _flatten_tree(res.data)}
+        # /docs（allow）と /docs/guide（allow）は出る。
+        self.assertIn("/docs", all_paths)
+        self.assertIn("/docs/guide", all_paths)
+        # /docs/intro は deny → 自身も子孫 /docs/intro/deep も欠落（祖先継承）。
+        self.assertNotIn("/docs/intro", all_paths)
+        self.assertNotIn("/docs/intro/deep", all_paths)
+        # /blog は未許可（既定非公開）→ 欠落。
+        self.assertNotIn("/blog", all_paths)
+
+    @override_settings(JANUS_DEFAULT_PAGE_VIEW=False, JANUS_DEFAULT_PAGE_EDIT=False)
+    def test_empty_virtual_node_pruned(self):
+        # 祖先ルート可視・中間仮想 /docs・唯一の実ページ子孫 /docs/intro が view 拒否。
+        # 空になった /docs がレスポンスに現れない（手順 7.5 の剪定）。
+        self._create_pages([("/docs/intro", "Intro")])
+        # /docs 自身を view allow（仮想ノードだが path 単位で許可可能）。
+        _make_user_perm("/docs", self.user, "view", "allow")
+        # 唯一の実ページ子孫 /docs/intro を deny。
+        _make_user_perm("/docs/intro", self.user, "view", "deny")
+        res = self.client.get(self.tree_url, {"root": "/"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        all_paths = {node["path"] for node in _flatten_tree(res.data)}
+        self.assertNotIn("/docs", all_paths)
+        self.assertNotIn("/docs/intro", all_paths)
+        # 空仮想ノード不変条件: 全ノードで not (hasPage==False and hasChildren==False)。
+        for node in _flatten_tree(res.data):
+            self.assertFalse(node["hasPage"] is False and node["hasChildren"] is False)
+
+    def test_empty_tree_no_pages(self):
+        # ページ 0 件で ?root=/ は 200 + []。
+        res = self.client.get(self.tree_url, {"root": "/"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data, [])
+
+    def test_empty_tree_nonexistent_root(self):
+        # 非実在 root（配下に何も無い）は 200 + []（非実在と可視 0 件を区別しない）。
+        self._create_pages([("/docs/intro", "Intro")])
+        res = self.client.get(self.tree_url, {"root": "/ghost"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data, [])
+
+    @override_settings(JANUS_DEFAULT_PAGE_VIEW=False, JANUS_DEFAULT_PAGE_EDIT=False)
+    def test_empty_tree_zero_visible(self):
+        # 全ノード view 不可（既定非公開・allow 無し）→ 200 + []。
+        self._create_pages([("/docs", "Docs"), ("/docs/intro", "Intro")])
+        res = self.client.get(self.tree_url, {"root": "/"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data, [])
+
+    def test_has_children_matches_children_length(self):
+        # 全ノードで hasChildren == (len(children) > 0)。
+        self._create_pages(
+            [
+                ("/docs", "Docs"),
+                ("/docs/intro", "Intro"),
+                ("/docs/guide", "Guide"),
+                ("/docs/intro/deep", "Deep"),
+                ("/blog", "Blog"),
+            ]
+        )
+        res = self.client.get(self.tree_url, {"root": "/"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        for node in _flatten_tree(res.data):
+            self.assertEqual(node["hasChildren"], len(node["children"]) > 0)
+
+    def test_requires_authentication(self):
+        # 未認証は既定 IsAuthenticated が 401。
+        self.client.force_authenticate(user=None)
+        res = self.client.get(self.tree_url, {"root": "/"})
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)

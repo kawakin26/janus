@@ -55,6 +55,28 @@ class PageSummarySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class PageTreeNodeSerializer(serializers.Serializer):
+    """ページツリー 1 ノードの出力表現（design 2.2 / 2.3）。
+
+    PageTreeView が組み立てたプレーンな dict ツリー（キーは path/title/hasPage/
+    hasChildren/children。仮想ノードは Page インスタンスを持たない）を整形する
+    純粋 Serializer。ModelSerializer にはしない。children は自己再帰で、クラス
+    定義本体内から自分自身を many=True 参照できないため get_fields() で後付けする。
+    出力 JSON のキーは dict と一致させ camelCase（hasPage/hasChildren）のまま返す。
+    """
+
+    path = serializers.CharField()
+    title = serializers.CharField()
+    hasPage = serializers.BooleanField()
+    hasChildren = serializers.BooleanField()
+
+    def get_fields(self):
+        fields = super().get_fields()
+        # 自己再帰: children は PageTreeNodeSerializer のネスト配列。
+        fields["children"] = PageTreeNodeSerializer(many=True)
+        return fields
+
+
 class RevisionSummarySerializer(serializers.ModelSerializer):
     """履歴一覧の軽量表現（design 5.5）。body/title を含めない。"""
 
