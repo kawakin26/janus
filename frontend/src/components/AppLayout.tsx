@@ -155,11 +155,12 @@ function AppLayout({ children }: AppLayoutProps) {
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
-            {/* draw.io 同梱配布物（Apache-2.0 / diagrams.net）のライセンス導線。
-                静的配信物のため router の Link ではなく素の <a> で /drawio/LICENSE・/drawio/NOTICE を参照する。 */}
+            {/* ライセンス導線。Janus 本体は MIT（ルート LICENSE）、
+                同梱物・依存のライセンスは THIRD-PARTY-NOTICES.md にまとめている。
+                いずれも public/ に置いた静的ファイルへの <a> リンク。 */}
             <a
               className="text-xs text-fg-muted"
-              href="/drawio/LICENSE"
+              href="/LICENSE"
               target="_blank"
               rel="noreferrer"
             >
@@ -167,7 +168,7 @@ function AppLayout({ children }: AppLayoutProps) {
             </a>
             <a
               className="text-xs text-fg-muted"
-              href="/drawio/NOTICE"
+              href="/THIRD-PARTY-NOTICES.md"
               target="_blank"
               rel="noreferrer"
             >
