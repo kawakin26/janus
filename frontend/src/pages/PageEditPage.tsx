@@ -35,9 +35,11 @@ import remarkDrawio from '../markdown/drawio/remark-drawio'
 import { serializeDrawio } from '../markdown/drawio/serialize-drawio'
 import { findDrawioBlocks, replaceDrawioBlock } from '../markdown/drawio/drawio-block'
 import {
+  buildExportMessage,
   buildLoadMessage,
   createDrawioMessageHandler,
 } from '../markdown/drawio/drawio-embed'
+import { useTheme } from '../theme/useTheme'
 
 /**
  * 本文中の index 番目の `:::custom-map` ブロックを buildMapData で MapData 化する。
@@ -70,7 +72,18 @@ function parseDrawioBlock(blockText: string): string {
 }
 
 /** 同梱 webapp を embed モード（proto=json）で開く iframe の src（自オリジン・外部 CDN 不使用）。 */
-const DRAWIO_EMBED_SRC = '/drawio/webapp/index.html?embed=1&proto=json&spin=1&libraries=0&noExitBtn=0'
+const DRAWIO_EMBED_SRC_BASE =
+  '/drawio/webapp/index.html?embed=1&proto=json&spin=1&libraries=0&noExitBtn=0'
+
+/**
+ * iframe の src を Janus の実効テーマ連動で組み立てる（問題1・案A）。
+ * embed モードの draw.io は urlParams.dark を最優先で見るため、&dark=1/0 を付けて
+ * 親 Janus（dark）と子 draw.io（既定 light）のテーマ割れ＝ダークで線が見えない問題を解消する。
+ * 公開 embed.diagrams.net へは接続せず、自オリジン同梱 iframe の urlParams のみで制御する。
+ */
+function buildDrawioEmbedSrc(effectiveTheme: 'light' | 'dark'): string {
+  return `${DRAWIO_EMBED_SRC_BASE}&dark=${effectiveTheme === 'dark' ? 1 : 0}`
+}
 
 // ネイティブ要素へ直接付ける Tailwind クラス（要素タグ不変の制約のため共通 UI コンポーネントは使わない）。
 // 体裁は Button/Alert の normal/error variant と同一ユーティリティに揃える（見た目を変えないため）。
@@ -109,6 +122,7 @@ function PageEditPage() {
   const storage = useStorage()
   const navigate = useNavigate()
   const handleError = usePageError()
+  const { effectiveTheme } = useTheme()
 
   const [loading, setLoading] = useState(true)
   // 既存ページか新規作成かの判定。true なら updatePage、false なら createPage。
@@ -127,14 +141,24 @@ function PageEditPage() {
 
   // drawio GUI 編集の状態。drawioEditing が null でなければ embed iframe を開いている。
   // blockIndex が null のときは本文末尾へ新規ブロックを追加するモード。xml は初期読込み用。
+  // src はエディタを開いた時点の実効テーマで固定する（問題3）。セッション途中で OS テーマが
+  // 変わっても iframe を再読込（＝セッション開始時 XML への巻き戻り）させないため、
+  // effectiveTheme を直接 src に結ばず、開いた瞬間の値をここへ captured して固定する。
   const [drawioEditing, setDrawioEditing] = useState<{
     blockIndex: number | null
     xml: string
+    src: string
   } | null>(null)
+  // 新規描画（blockIndex=null）の autosave 重複（問題1）を防ぐためのセッション用ライブ
+  // ブロックインデックス。最初の save で挿入先が確定したらその index を記録し、以降の
+  // autosave はそのブロックを置換する（末尾へ追加し続けない）。
+  const drawioSessionBlockIndexRef = useRef<number | null>(null)
   // embed iframe への参照（load / exit メッセージ送信に使う）。
   const drawioIframeRef = useRef<HTMLIFrameElement>(null)
   // drawio エディタを全画面オーバーレイ（モーダル）で表示するか。ホスト側 CSS のみで制御し、
-  // DRAWIO_EMBED_SRC・postMessage 契約・:::drawio 保存形式には一切触れない（問題1・案A）。
+  // postMessage 契約・:::drawio 保存形式には一切触れない。
+  // エディタは既定で全画面で開く（open 時に true をセット）。これはページ全体のスクロール文脈を
+  // 排除し、表セル編集時のキャレット/編集ボックスの飛び（問題2）を実質回避するため（案A）。
   const [isDrawioFullscreen, setIsDrawioFullscreen] = useState(false)
 
   // 本文中の custom-map ブロック数（導線の出し分けに使う）。
@@ -185,49 +209,108 @@ function PageEditPage() {
   const cancelMapEditing = () => setMapEditing(null)
 
   // 既存 drawio ブロックを embed エディタで開く。
+  // 表セル編集の飛び（問題2）回避のため既定で全画面オーバーレイで開く（案A）。
   const openDrawioBlock = (blockIndex: number) => {
     const blocks = findDrawioBlocks(body)
     const block = blocks[blockIndex]
     if (!block) return
     const xml = parseDrawioBlock(body.slice(block.start, block.end))
-    setDrawioEditing({ blockIndex, xml })
+    // 既存ブロック編集はセッションの挿入先が既に確定しているので live index も同じ値にする。
+    drawioSessionBlockIndexRef.current = blockIndex
+    // src は開いた時点のテーマで固定（問題3）。
+    setDrawioEditing({ blockIndex, xml, src: buildDrawioEmbedSrc(effectiveTheme) })
+    setIsDrawioFullscreen(true)
   }
 
   // 新規 drawio ブロックを追加するモードで開く（初期 XML は空）。
+  // 表セル編集の飛び（問題2）回避のため既定で全画面オーバーレイで開く（案A）。
   const openNewDrawioBlock = () => {
-    setDrawioEditing({ blockIndex: null, xml: '' })
+    // 新規はまだ挿入先が未確定。最初の save で確定する（問題1）。
+    drawioSessionBlockIndexRef.current = null
+    // src は開いた時点のテーマで固定（問題3）。
+    setDrawioEditing({ blockIndex: null, xml: '', src: buildDrawioEmbedSrc(effectiveTheme) })
+    setIsDrawioFullscreen(true)
   }
 
   const closeDrawioEditing = useCallback(() => {
     setDrawioEditing(null)
     // 編集を閉じるときは全画面状態もリセットする。
     setIsDrawioFullscreen(false)
+    // セッションのライブインデックスも破棄する（次セッションへ漏らさない）。
+    drawioSessionBlockIndexRef.current = null
   }, [])
 
+  // 「描画編集を閉じる」押下時に、閉じる前に最新 XML を回収するための保留状態。
+  // export を送って応答（onExport）を待ち、本文へ反映してから閉じる。応答が来ない場合に
+  // 備えてタイムアウトで強制的に閉じる（autosave:1 で反映済みのため取りこぼしは最小）。
+  const drawioCloseAfterExportRef = useRef(false)
+  const drawioCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ホスト側の「描画編集を閉じる」から呼ぶ閉じ要求（embed プロトコル調査の結論に基づく）。
+  // draw.io の exit イベントは modified を常に false 化するため未保存判定に使えない。
+  // 代わりに {action:'export', format:'xml'} で最新 XML を pull し、onExport で本文へ反映
+  // してから閉じる（autosave 取りこぼしや CHANGE 未発火の最後の 1 編集も確実に回収する）。
+  // iframe 未準備や応答が無いときは（タイムアウトで）直接閉じる（フォールバック）。
+  const requestCloseDrawioEditing = useCallback(() => {
+    const target = drawioIframeRef.current?.contentWindow
+    if (!target) {
+      closeDrawioEditing()
+      return
+    }
+    drawioCloseAfterExportRef.current = true
+    target.postMessage(buildExportMessage(), window.location.origin)
+    // export 応答が来ない場合のフォールバック（autosave 済み前提で閉じる）。
+    if (drawioCloseTimerRef.current !== null) clearTimeout(drawioCloseTimerRef.current)
+    drawioCloseTimerRef.current = setTimeout(() => {
+      if (drawioCloseAfterExportRef.current) {
+        drawioCloseAfterExportRef.current = false
+        closeDrawioEditing()
+      }
+    }, 1500)
+  }, [closeDrawioEditing])
+
   // save 受信 XML を serialize-drawio でブロック化し本文へ反映する。
-  // 新規（blockIndex=null）は本文末尾へ追加、既存は対象ブロックのみ置換（§7.3 非破壊）。
-  const applyDrawioXml = useCallback(
-    (xml: string, blockIndex: number | null) => {
-      const serialized = serializeDrawio(xml)
-      setBody((prev) => {
-        if (blockIndex === null) {
-          const needsSeparator = prev.length > 0 && !prev.endsWith('\n')
-          const prefix = prev.length > 0 ? prev + (needsSeparator ? '\n\n' : '\n') : ''
-          return prefix + serialized + '\n'
+  // autosave 有効時は 1 編集セッションで save が何度も届く。セッションのライブ
+  // インデックス（drawioSessionBlockIndexRef）を使い、
+  //  - まだ挿入先未確定（null）＝新規描画の初回 save: 本文末尾へ 1 ブロック追加し、
+  //    追加したブロックの index を ref へ記録する（以降はこのブロックを置換）。
+  //  - 確定済み（number）: 対象ブロックのみ置換（§7.3 非破壊）。
+  // これにより反復 autosave が :::drawio ブロックを重複追加しない（問題1）。
+  //
+  // finding#1（save-and-exit の置換先競合）対策: 挿入先 index は **呼び出し時点で
+  // 同期的に snapshot** し、setBody updater 内ではこの snapshot を使う。
+  // save(exit:true) では onSave が applyDrawioXml の直後に closeDrawioEditing() を呼び、
+  // それが drawioSessionBlockIndexRef.current を null に戻す。React の updater は即時
+  // 実行が保証されないため、updater 内で ref を遅延参照すると close 後の null を読み、
+  // 既存図を置換する代わりに本文末尾へ新規ブロックを追記してしまう（既存図が更新されず
+  // 新旧の図が併存する）。snapshot を閉じ込めることでこの競合を断つ。
+  const applyDrawioXml = useCallback((xml: string) => {
+    const serialized = serializeDrawio(xml)
+    // 呼び出し時点のライブ index を snapshot（以降の close による ref リセットと競合させない）。
+    const snapshotIndex = drawioSessionBlockIndexRef.current
+    setBody((prev) => {
+      if (snapshotIndex === null) {
+        const needsSeparator = prev.length > 0 && !prev.endsWith('\n')
+        const prefix = prev.length > 0 ? prev + (needsSeparator ? '\n\n' : '\n') : ''
+        const next = prefix + serialized + '\n'
+        // 追加した新規ブロックの index を確定し、次回以降の autosave は置換させる。
+        // セッションが既に閉じている（ref が null へ戻った）場合は上書きしない。
+        if (drawioSessionBlockIndexRef.current === null) {
+          drawioSessionBlockIndexRef.current = findDrawioBlocks(next).length - 1
         }
-        const blocks = findDrawioBlocks(prev)
-        const block = blocks[blockIndex]
-        return block ? replaceDrawioBlock(prev, block, serialized) : prev
-      })
-    },
-    [],
-  )
+        return next
+      }
+      const blocks = findDrawioBlocks(prev)
+      const block = blocks[snapshotIndex]
+      return block ? replaceDrawioBlock(prev, block, serialized) : prev
+    })
+  }, [])
 
   // embed iframe の postMessage ハンドラ（proto=json）を window に登録する。
   // init で既存 XML を load、save で本文へ反映、exit でクローズ。origin は自オリジン固定。
   useEffect(() => {
     if (drawioEditing === null) return
-    const { blockIndex, xml } = drawioEditing
+    const { xml } = drawioEditing
 
     const handler = createDrawioMessageHandler({
       onInit: () => {
@@ -237,10 +320,31 @@ function PageEditPage() {
         )
       },
       onSave: (savedXml, { exit }) => {
-        applyDrawioXml(savedXml, blockIndex)
+        // Save ボタン/Ctrl+S。本文へ反映し、保存して閉じる要求なら閉じる。
+        applyDrawioXml(savedXml)
         if (exit) closeDrawioEditing()
       },
+      onAutosave: (savedXml) => {
+        // autosave:1 により編集のたびに届く。本文 state へ反映し続けて取りこぼしを防ぐ（主因対策）。
+        applyDrawioXml(savedXml)
+      },
+      onExport: (exportedXml) => {
+        // {action:'export',format:'xml'} への応答。最新 XML を本文へ反映する。
+        if (exportedXml.length > 0) applyDrawioXml(exportedXml)
+        // 「描画編集を閉じる」からの export だった場合は、回収後に閉じる（フォールバックタイマー解除）。
+        if (drawioCloseAfterExportRef.current) {
+          drawioCloseAfterExportRef.current = false
+          if (drawioCloseTimerRef.current !== null) {
+            clearTimeout(drawioCloseTimerRef.current)
+            drawioCloseTimerRef.current = null
+          }
+          closeDrawioEditing()
+        }
+      },
       onExit: () => {
+        // draw.io 内の Exit ボタン等による終了通知。modified は常に false のため判定に使わない。
+        // autosave:1 で編集内容は本文へ反映済みのため、ここは素直に閉じる
+        //（export pull を挟むと iframe 無応答時に閉じられなくなるため挟まない）。
         closeDrawioEditing()
       },
     })
@@ -249,7 +353,7 @@ function PageEditPage() {
     return () => {
       window.removeEventListener('message', handler)
     }
-  }, [drawioEditing, applyDrawioXml, closeDrawioEditing])
+  }, [drawioEditing, applyDrawioXml, closeDrawioEditing, requestCloseDrawioEditing])
 
   // 全画面オーバーレイ中は Esc キーで全画面を解除する（アクセシビリティ・最小実装）。
   useEffect(() => {
@@ -297,6 +401,15 @@ function PageEditPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    // draw.io 編集セッション中はページ保存を拒否する（問題3・レビュー finding#1）。
+    // 開いたままページ保存すると、未到達の autosave（applyDrawioXml→body 反映）を取りこぼし、
+    // 古い body を永続化して遷移＝編集を破棄する競合が起きる。先に「描画編集を閉じる」で
+    // exit/modified ガードを通し、本文へ反映を確定させてから保存させる。
+    // これにより save_page_body 単一経路（updatePage/createPage）はそのまま維持する。
+    if (drawioEditing !== null) {
+      setError('描画エディタを開いています。先に「描画編集を閉じる」で編集を確定してからページを保存してください。')
+      return
+    }
     setError(null)
     setSubmitting(true)
     try {
@@ -409,8 +522,17 @@ function PageEditPage() {
         <section className="flex flex-col gap-1.5" aria-label="drawio 描画 編集">
           <div className="flex items-center gap-2">
             <span className="mr-1 text-sm font-semibold text-fg-muted">描画</span>
-            {/* 新規作成はアクセント（主要アクション）、既存の編集は中立の normal。 */}
-            <button type="button" onClick={openNewDrawioBlock} className={BUTTON_ACCENT_CLASS}>
+            {/* 新規作成はアクセント（主要アクション）、既存の編集は中立の normal。
+                draw.io 編集セッション中（drawioEditing!==null）は追加・編集ボタンを無効化する
+                （finding#1）。別の描画を開くと現在の iframe が exit/modified ガードを通らず
+                直接差し替えられ、autosave 到達前の未反映 XML を取りこぼすため。先に
+                「描画編集を閉じる」で exit ガードを通してセッションを終えてから次を開かせる。 */}
+            <button
+              type="button"
+              onClick={openNewDrawioBlock}
+              disabled={drawioEditing !== null}
+              className={BUTTON_ACCENT_CLASS}
+            >
               描画を追加
             </button>
             {Array.from({ length: drawioBlockCount }, (_, i) => (
@@ -418,6 +540,7 @@ function PageEditPage() {
                 key={i}
                 type="button"
                 onClick={() => openDrawioBlock(i)}
+                disabled={drawioEditing !== null}
                 className={BUTTON_NORMAL_CLASS}
               >
                 描画 {i + 1} を編集
@@ -437,7 +560,7 @@ function PageEditPage() {
             >
               <iframe
                 ref={drawioIframeRef}
-                src={DRAWIO_EMBED_SRC}
+                src={drawioEditing.src}
                 title="drawio 描画エディタ"
                 className={
                   isDrawioFullscreen
@@ -453,7 +576,11 @@ function PageEditPage() {
                 >
                   {isDrawioFullscreen ? '全画面を解除' : '全画面表示'}
                 </button>
-                <button type="button" onClick={closeDrawioEditing} className={BUTTON_NORMAL_CLASS}>
+                <button
+                  type="button"
+                  onClick={requestCloseDrawioEditing}
+                  className={BUTTON_NORMAL_CLASS}
+                >
                   描画編集を閉じる
                 </button>
               </div>
@@ -462,8 +589,16 @@ function PageEditPage() {
         </section>
 
         <div className="flex items-center gap-4">
-          <button type="submit" disabled={submitting} className={BUTTON_ACCENT_CLASS}>
-            {submitting ? '保存中...' : '保存'}
+          {/* draw.io の保存（本文へ反映）とページ全体の保存を文言で分離・明示する（問題3・案C）。
+              draw.io 編集中はページ保存を無効化する（finding#1）。開いたまま保存すると未到達の
+              autosave を取りこぼすため、先に「描画編集を閉じる」で編集を確定させてから保存させる。
+              onSubmit 側の guard と二重化（キーボード submit 等の抜け道も塞ぐ）。 */}
+          <button
+            type="submit"
+            disabled={submitting || drawioEditing !== null}
+            className={BUTTON_ACCENT_CLASS}
+          >
+            {submitting ? '保存中...' : 'ページを保存'}
           </button>
           <Link to={cancelTo} className="text-fg-muted">
             キャンセル

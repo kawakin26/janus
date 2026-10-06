@@ -91,6 +91,11 @@ function buildGraphConfig(xml: string): string {
     nav: true,
     resize: true,
     toolbar: 'zoom layers',
+    // 図の背景を白（紙）に固定する。GraphViewer は背景未指定だと透明で描くため、
+    // ダークモード（暗い surface）では XML の黒系ストロークが地色に沈んで「何も見えない」。
+    // 図を常に白地のカードとして描くことでライト/ダーク両方で可読にする（設計 §3.3-A の
+    // 生成コンテンツ割れ許容の範囲。「見えない」実害を避けることを優先）。
+    backgroundColor: '#ffffff',
     xml,
   })
 }
@@ -150,8 +155,13 @@ function DrawioViewer({ xml }: DrawioViewerProps) {
   }, [xml])
 
   return (
-    <div className="relative block max-w-full overflow-auto" data-drawio-container="true">
-      {/* GraphViewer が描画する受け皿。children は React で描かず命令的に差し替える。 */}
+    <div
+      className="relative block max-w-full overflow-auto rounded border border-border bg-white"
+      data-drawio-container="true"
+    >
+      {/* GraphViewer が描画する受け皿。children は React で描かず命令的に差し替える。
+          図は白地（backgroundColor:#fff）で描くため、コンテナも白背景にして
+          ダークモードでも「白い図カード」として自然に表示する。 */}
       <div ref={mountRef} />
       {status !== 'rendered' && (
         <div

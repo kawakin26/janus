@@ -6,6 +6,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import {
+  buildExportMessage,
   buildLoadMessage,
   createDrawioMessageHandler,
   isSameOrigin,
@@ -99,11 +100,34 @@ describe('createDrawioMessageHandler: イベント振り分け', () => {
     expect(onSave).toHaveBeenCalledWith('', { exit: false })
   })
 
-  it('exit を受けて onExit を呼ぶ（modified を渡す）', () => {
+  it('autosave の XML を onAutosave へ渡す（autosave:1 時に編集のたび届く）', () => {
+    const onAutosave = vi.fn()
+    const handler = createDrawioMessageHandler({ onAutosave })
+    handler(sameOriginEvent({ event: 'autosave', xml: '<mxGraphModel/>' }))
+    expect(onAutosave).toHaveBeenCalledWith('<mxGraphModel/>')
+  })
+
+  it('xml が無い autosave は空文字で渡す', () => {
+    const onAutosave = vi.fn()
+    const handler = createDrawioMessageHandler({ onAutosave })
+    handler(sameOriginEvent({ event: 'autosave' }))
+    expect(onAutosave).toHaveBeenCalledWith('')
+  })
+
+  it('export の XML を onExport へ渡す（xml 優先、無ければ data）', () => {
+    const onExport = vi.fn()
+    const handler = createDrawioMessageHandler({ onExport })
+    handler(sameOriginEvent({ event: 'export', xml: '<x/>', format: 'xml' }))
+    expect(onExport).toHaveBeenCalledWith('<x/>')
+    handler(sameOriginEvent({ event: 'export', data: '<y/>' }))
+    expect(onExport).toHaveBeenCalledWith('<y/>')
+  })
+
+  it('exit を受けて onExit を呼ぶ（modified は使わない・引数なし）', () => {
     const onExit = vi.fn()
     const handler = createDrawioMessageHandler({ onExit })
     handler(sameOriginEvent({ event: 'exit', modified: true }))
-    expect(onExit).toHaveBeenCalledWith({ modified: true })
+    expect(onExit).toHaveBeenCalledTimes(1)
   })
 
   it('未知イベント・load は無視する（例外を投げない）', () => {
@@ -131,13 +155,20 @@ describe('createDrawioMessageHandler: イベント振り分け', () => {
 })
 
 describe('buildLoadMessage', () => {
-  it('load アクションと XML を含む JSON 文字列を生成する', () => {
+  it('load アクションと XML・autosave を含む JSON 文字列を生成する', () => {
     const parsed = JSON.parse(buildLoadMessage('<mxGraphModel/>'))
-    expect(parsed).toEqual({ action: 'load', xml: '<mxGraphModel/>' })
+    expect(parsed).toEqual({ action: 'load', xml: '<mxGraphModel/>', autosave: 1 })
   })
 
-  it('空 XML（新規図）でも load を生成する', () => {
+  it('空 XML（新規図）でも load を autosave 付きで生成する', () => {
     const parsed = JSON.parse(buildLoadMessage(''))
-    expect(parsed).toEqual({ action: 'load', xml: '' })
+    expect(parsed).toEqual({ action: 'load', xml: '', autosave: 1 })
+  })
+})
+
+describe('buildExportMessage', () => {
+  it('export アクション（format:xml）の JSON 文字列を生成する（最新 XML の pull 用）', () => {
+    const parsed = JSON.parse(buildExportMessage())
+    expect(parsed).toEqual({ action: 'export', format: 'xml' })
   })
 })

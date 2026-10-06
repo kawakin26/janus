@@ -5,7 +5,7 @@
 // createPage が ApiError(409) を throw したとき日本語メッセージが role="alert" に出て遷移しない、を検証する。
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { StorageProvider } from '../storage/StorageProvider'
@@ -32,6 +32,22 @@ function makePage(overrides: Partial<Page> = {}): Page {
     updated_by: sampleUser,
     ...overrides,
   }
+}
+
+/**
+ * iframe（draw.io webapp）からの postMessage を自オリジンで模す。
+ * PageEditPage の message ハンドラは origin===window.location.origin のみ受理するため、
+ * jsdom の既定 origin で MessageEvent を dispatch する。
+ */
+function dispatchDrawioMessage(payload: Record<string, unknown>) {
+  act(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify(payload),
+        origin: window.location.origin,
+      }),
+    )
+  })
 }
 
 function renderEdit(client: StorageClient, path: string) {
@@ -69,7 +85,7 @@ describe('PageEditPage', () => {
     const body = screen.getByLabelText('本文（Markdown）')
     await user.clear(body)
     await user.type(body, '更新後の本文')
-    await user.click(screen.getByRole('button', { name: '保存' }))
+    await user.click(screen.getByRole('button', { name: 'ページを保存' }))
 
     expect(updatePage).toHaveBeenCalledWith('/docs/intro', {
       title: 'イントロ',
@@ -96,7 +112,7 @@ describe('PageEditPage', () => {
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('タイトル'), 'T')
     await user.type(screen.getByLabelText('本文（Markdown）'), 'B')
-    await user.click(screen.getByRole('button', { name: '保存' }))
+    await user.click(screen.getByRole('button', { name: 'ページを保存' }))
 
     expect(createPage).toHaveBeenCalledWith({ path: '/docs/new', title: 'T', body: 'B' })
     await waitFor(() => {
@@ -104,7 +120,7 @@ describe('PageEditPage', () => {
     })
   })
 
-  it('drawio 全画面トグルで dialog ロールが付き、再トグル/Esc で外れる', async () => {
+  it('drawio は既定で全画面（dialog）で開き、解除/Esc で外れ再トグルできる', async () => {
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
       getPage: vi.fn(async () => makePage()),
@@ -119,27 +135,25 @@ describe('PageEditPage', () => {
     await user.click(screen.getByRole('button', { name: '描画を追加' }))
 
     // 描画エディタ（iframe）が開くまで待つ。
+    // 問題2 対処で既定が全画面オーバーレイになったため、開いた直後から dialog ロールを持つ。
     const frame = await screen.findByTitle('drawio 描画エディタ')
     const editor = frame.parentElement as HTMLElement
-    // 全画面でないときは dialog ロールを持たない（§7.1: 全画面状態の契約は role="dialog"）。
-    expect(screen.queryByRole('dialog')).toBeNull()
-
-    // 全画面表示にすると dialog ロールになる。
-    await user.click(screen.getByRole('button', { name: '全画面表示' }))
     expect(screen.getByRole('dialog')).toBe(editor)
 
-    // 再トグルで外れる。
+    // 全画面を解除すると dialog ロールが外れる。
     await user.click(screen.getByRole('button', { name: '全画面を解除' }))
     expect(screen.queryByRole('dialog')).toBeNull()
 
-    // もう一度全画面にして Esc で解除する。
+    // 再び全画面にすると dialog ロールが戻る。
     await user.click(screen.getByRole('button', { name: '全画面表示' }))
     expect(screen.getByRole('dialog')).toBe(editor)
+
+    // Esc で解除する。
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('描画編集を閉じると全画面状態もリセットされる', async () => {
+  it('描画編集を閉じると（exit 往復後に）全画面状態もリセットされ、再度開くと既定の全画面に戻る', async () => {
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
       getPage: vi.fn(async () => makePage()),
@@ -153,14 +167,286 @@ describe('PageEditPage', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: '描画を追加' }))
     await screen.findByTitle('drawio 描画エディタ')
-    await user.click(screen.getByRole('button', { name: '全画面表示' }))
-    await user.click(screen.getByRole('button', { name: '描画編集を閉じる' }))
+    // 既定で全画面（dialog）。一旦解除してから閉じる。
+    expect(screen.getByRole('dialog')).not.toBeNull()
+    await user.click(screen.getByRole('button', { name: '全画面を解除' }))
 
-    // エディタが閉じ、再度開いても全画面状態は持ち越さない。
-    expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    // 「描画編集を閉じる」は閉じる前に最新 XML を pull するため export を要求する
+    //（直接 iframe を破棄しない）。export 応答が来るまでエディタはまだ閉じない。
+    await user.click(screen.getByRole('button', { name: '描画編集を閉じる' }))
+    expect(screen.queryByTitle('drawio 描画エディタ')).not.toBeNull()
+
+    // draw.io が export（最新 XML）を返すと、本文へ回収してから閉じる。
+    dispatchDrawioMessage({ event: 'export', xml: '<mxGraphModel/>', format: 'xml' })
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+
+    // 再度開くと（既定どおり）全画面で開く。
     await user.click(screen.getByRole('button', { name: '描画を追加' }))
     await screen.findByTitle('drawio 描画エディタ')
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('dialog')).not.toBeNull()
+  })
+
+  it('draw.io 内の exit 通知を受けると（modified に依存せず）素直に閉じる', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage()),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('既存の本文')).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '描画を追加' }))
+    await screen.findByTitle('drawio 描画エディタ')
+
+    // draw.io 側の Exit ボタン等が exit を送ると閉じる。modified は常に false 化されるため
+    // host は判定に使わない（autosave:1 で編集内容は本文へ反映済みという前提）。
+    dispatchDrawioMessage({ event: 'exit', modified: false })
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+  })
+
+  it('autosave イベントで編集内容が本文へ反映される（保存操作なしでも取りこぼさない）', async () => {
+    const updatePage = vi.fn(async () => makePage())
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body: '' })),
+      updatePage,
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '描画を追加' }))
+    await screen.findByTitle('drawio 描画エディタ')
+
+    // 「ファイル→保存」せず autosave だけが届いても本文へ反映される（主因対策の回帰テスト）。
+    dispatchDrawioMessage({ event: 'autosave', xml: '<mxGraphModel>AUTO</mxGraphModel>' })
+    // exit で閉じてから保存。
+    dispatchDrawioMessage({ event: 'exit', modified: false })
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+    await user.click(screen.getByRole('button', { name: 'ページを保存' }))
+    await waitFor(() => expect(updatePage).toHaveBeenCalledTimes(1))
+    // autosave された XML が本文（:::drawio ブロック）へ入っている。
+    expect(updatePage).toHaveBeenCalledWith(
+      '/docs/intro',
+      expect.objectContaining({
+        body: expect.stringContaining('AUTO'),
+      }),
+    )
+    expect(updatePage).toHaveBeenCalledWith(
+      '/docs/intro',
+      expect.objectContaining({
+        body: expect.stringContaining(':::drawio'),
+      }),
+    )
+  })
+
+  it('新規描画の反復 autosave は :::drawio ブロックを重複追加せず同一ブロックを置換する', async () => {
+    const updatePage = vi.fn(async () => makePage())
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body: '' })),
+      updatePage,
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '描画を追加' }))
+    await screen.findByTitle('drawio 描画エディタ')
+
+    // autosave の反復 save を 3 回受信する（新規描画・同一セッション）。
+    dispatchDrawioMessage({ event: 'save', xml: '<mxGraphModel>A</mxGraphModel>' })
+    dispatchDrawioMessage({ event: 'save', xml: '<mxGraphModel>AB</mxGraphModel>' })
+    dispatchDrawioMessage({ event: 'save', xml: '<mxGraphModel>ABC</mxGraphModel>' })
+
+    // 本文には :::drawio ブロックが 1 つだけ（最新 XML）であること。
+    const bodyField = screen.getByLabelText('本文（Markdown）') as HTMLTextAreaElement
+    await waitFor(() => {
+      expect(bodyField.value).toContain('ABC')
+    })
+    const blockCount = (bodyField.value.match(/:::drawio/g) ?? []).length
+    expect(blockCount).toBe(1)
+    expect(bodyField.value).not.toContain('>A<')
+  })
+
+  it('既存描画の save(exit:true) は対象ブロックだけを置換し（追記せず）エディタを閉じる（finding#1）', async () => {
+    // 既存 :::drawio ブロックを 2 つ持つ本文。2 番目（index 1）を編集して
+    // save(exit:true) を送ったとき、close による ref リセットと競合しても
+    // 対象ブロックだけが置換され、ブロック数が増えない（新規追記されない）ことを検証する。
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () =>
+        makePage({
+          body:
+            ':::drawio\n```\n<mxGraphModel>FIRST</mxGraphModel>\n```\n:::\n\n' +
+            ':::drawio\n```\n<mxGraphModel>SECOND</mxGraphModel>\n```\n:::\n',
+        }),
+      ),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    // 2 番目の既存描画（index 1）を編集で開く。
+    await user.click(screen.getByRole('button', { name: '描画 2 を編集' }))
+    await screen.findByTitle('drawio 描画エディタ')
+
+    // save と同時に exit:true を受信（「ファイル→保存」して閉じる操作）。
+    // onSave は applyDrawioXml の直後に closeDrawioEditing() を呼ぶため、snapshot で
+    // 競合を断てていなければ本文末尾へ新規ブロックが追記されてしまう。
+    dispatchDrawioMessage({ event: 'save', xml: '<mxGraphModel>SECOND-EDITED</mxGraphModel>', exit: true })
+
+    // エディタが閉じる。
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+
+    const bodyField = screen.getByLabelText('本文（Markdown）') as HTMLTextAreaElement
+    // 対象（2 番目）ブロックだけが置換され、1 番目は不変。ブロック数は 2 のまま（追記なし）。
+    expect(bodyField.value).toContain('SECOND-EDITED')
+    expect(bodyField.value).toContain('FIRST')
+    expect(bodyField.value).not.toContain('>SECOND<')
+    const blockCount = (bodyField.value.match(/:::drawio/g) ?? []).length
+    expect(blockCount).toBe(2)
+  })
+
+  it('セッション途中の OS テーマ変更で iframe src（dark パラメータ）が再読込されない', async () => {
+    // 制御可能な matchMedia を用意し、prefers-color-scheme の change を発火できるようにする。
+    const listeners = new Set<() => void>()
+    const mql = {
+      matches: false,
+      media: '(prefers-color-scheme: dark)',
+      onchange: null,
+      addEventListener: (_: string, cb: () => void) => listeners.add(cb),
+      removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+      addListener: (cb: () => void) => listeners.add(cb),
+      removeListener: (cb: () => void) => listeners.delete(cb),
+      dispatchEvent: () => true,
+    }
+    const originalMatchMedia = window.matchMedia
+    window.matchMedia = (() => mql) as unknown as typeof window.matchMedia
+
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage()),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('既存の本文')).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '描画を追加' }))
+    const frame = (await screen.findByTitle('drawio 描画エディタ')) as HTMLIFrameElement
+    // 開いた時点は light（matches=false）なので dark=0 で固定されている。
+    expect(frame.src).toContain('dark=0')
+
+    // OS テーマが dark に変わり、ThemeProvider が change を受けても、
+    // iframe src はセッション開始時の値（dark=0）のまま＝再読込（XML 巻き戻り）しない。
+    act(() => {
+      mql.matches = true
+      listeners.forEach((cb) => cb())
+    })
+    expect(frame.src).toContain('dark=0')
+    expect(frame.src).not.toContain('dark=1')
+
+    window.matchMedia = originalMatchMedia
+  })
+
+  it('draw.io 編集中はページ保存を拒否し（updatePage を呼ばず遷移しない）、閉じれば保存できる', async () => {
+    const updatePage = vi.fn(async () => makePage())
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage()),
+      updatePage,
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('既存の本文')).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '描画を追加' }))
+    await screen.findByTitle('drawio 描画エディタ')
+
+    // 編集中は「ページを保存」が無効化され、submit しても保存・遷移しない（finding#1）。
+    const saveButton = screen.getByRole('button', { name: 'ページを保存' })
+    expect(saveButton).toBeDisabled()
+    await user.click(saveButton)
+    expect(updatePage).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('view')).toBeNull()
+
+    // 「描画編集を閉じる」→ 未保存なし exit で閉じると、ページ保存が有効化され保存できる。
+    dispatchDrawioMessage({ event: 'exit', modified: false })
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+    const saveButtonAfter = screen.getByRole('button', { name: 'ページを保存' })
+    expect(saveButtonAfter).toBeEnabled()
+    await user.click(saveButtonAfter)
+    expect(updatePage).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(screen.getByTestId('view')).toBeInTheDocument()
+    })
+  })
+
+  it('draw.io 編集中は「描画を追加」「描画 N を編集」が無効化され、別セッションへ切り替えられない（finding#1）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      // 既存 :::drawio ブロックを 1 つ持つ本文（「描画 1 を編集」ボタンが出る）。
+      getPage: vi.fn(async () =>
+        makePage({ body: ':::drawio\n```\n<mxGraphModel>X</mxGraphModel>\n```\n:::\n' }),
+      ),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    // セッション開始前は追加・編集とも有効。
+    expect(screen.getByRole('button', { name: '描画を追加' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '描画 1 を編集' })).toBeEnabled()
+
+    // 「描画 1 を編集」で全画面オーバーレイが開く。全画面を解除して背景ボタンを操作可能にする。
+    await user.click(screen.getByRole('button', { name: '描画 1 を編集' }))
+    await screen.findByTitle('drawio 描画エディタ')
+    await user.click(screen.getByRole('button', { name: '全画面を解除' }))
+
+    // active セッション中は追加・編集とも無効化され、別セッションへ切り替えられない。
+    expect(screen.getByRole('button', { name: '描画を追加' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '描画 1 を編集' })).toBeDisabled()
+
+    // 「描画編集を閉じる」→ exit(modified:false) でセッションを終えると再び有効化される。
+    // 「描画編集を閉じる」は export を要求し、応答（最新 XML）回収後に閉じる。
+    await user.click(screen.getByRole('button', { name: '描画編集を閉じる' }))
+    dispatchDrawioMessage({ event: 'export', xml: '<mxGraphModel>X</mxGraphModel>', format: 'xml' })
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+    expect(screen.getByRole('button', { name: '描画を追加' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '描画 1 を編集' })).toBeEnabled()
   })
 
   it('createPage が 409 を throw したとき日本語メッセージを表示し遷移しない', async () => {
@@ -180,7 +466,7 @@ describe('PageEditPage', () => {
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('本文（Markdown）'), 'B')
-    await user.click(screen.getByRole('button', { name: '保存' }))
+    await user.click(screen.getByRole('button', { name: 'ページを保存' }))
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('同一パスのページが既に存在します')
