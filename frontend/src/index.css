@@ -137,3 +137,53 @@
     outline-offset: 1px;
   }
 }
+
+@layer components {
+  /* Markdown 本文（article）の体裁（設計 §6）。
+     MarkdownRenderer が生成する DOM には個別クラスを付けられないため、prose コンテナ
+     クラス .prose-janus を PageViewPage の <article> に 1 箇所付与し、配下の要素へ
+     「要素セレクタ + @apply」で体裁を与える。旧 index.css の article 系体裁をトークン駆動で
+     再現する（code/pre の背景は surface-raised 系トークンにしてダークでも破綻しない）。
+     Preflight でリストマーカー/コード体裁は外れるため、prose 内では意図的に戻す
+     （UA 既定への revert ではなく prose の意図したスタイル）。 */
+  .prose-janus {
+    line-height: var(--leading-relaxed); /* 旧 article{line-height 1.7} */
+  }
+
+  .prose-janus :where(h1, h2, h3) {
+    @apply mt-6; /* 旧 article h1/h2/h3{margin-top 1.5rem} */
+  }
+
+  .prose-janus p {
+    @apply my-3; /* 旧 article p{margin 0.75rem 0} */
+  }
+
+  .prose-janus :where(ul) {
+    @apply pl-6; /* 旧 article ul{padding-left 1.5rem} */
+    list-style-type: disc; /* Preflight で消えるマーカーを prose 内で明示的に戻す */
+  }
+
+  .prose-janus :where(ol) {
+    @apply pl-6; /* 旧 article ol{padding-left 1.5rem} */
+    list-style-type: decimal;
+  }
+
+  .prose-janus a {
+    @apply text-primary; /* アクセント色でリンクを区別 */
+    word-break: break-word; /* 旧 article a{word-break break-word} */
+  }
+
+  .prose-janus code {
+    @apply rounded-sm bg-surface-raised px-1 py-0.5; /* 旧 article code の体裁をトークン化 */
+    font-family: var(--font-mono);
+    font-size: 0.9em; /* 旧 article code{font-size 0.9em} */
+  }
+
+  .prose-janus pre {
+    @apply overflow-x-auto rounded-md bg-surface-raised px-4 py-3; /* 旧 article pre の体裁をトークン化 */
+  }
+
+  .prose-janus pre code {
+    @apply bg-transparent p-0; /* 旧 article pre code{background none; padding 0} */
+  }
+}

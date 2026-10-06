@@ -16,8 +16,9 @@ import MarkdownRenderer from '../markdown/MarkdownRenderer'
 import AppLayout from '../components/AppLayout'
 import Breadcrumbs from '../components/Breadcrumbs'
 import CommentSection from './CommentSection'
+import { Button } from '../components/ui/Button'
+import { Alert } from '../components/ui/Alert'
 import { usePageError } from './use-page-error'
-import styles from './PageViewPage.module.css'
 import { ApiError } from '../storage/types'
 import type { EffectivePermission, Page, PageSummary } from '../storage/types'
 
@@ -111,7 +112,7 @@ function PageViewPage() {
   if (loading) {
     return (
       <AppLayout>
-        <p>読み込み中...</p>
+        <p className="text-fg-muted">読み込み中...</p>
       </AppLayout>
     )
   }
@@ -119,9 +120,9 @@ function PageViewPage() {
   if (error !== null) {
     return (
       <AppLayout>
-        <p role="alert" aria-live="assertive">
+        <Alert variant="error" aria-live="assertive">
           {error}
-        </p>
+        </Alert>
       </AppLayout>
     )
   }
@@ -131,9 +132,11 @@ function PageViewPage() {
     return (
       <AppLayout>
         <Breadcrumbs path={path} />
-        <h1>ページが見つかりません</h1>
-        <p>パス: {path}</p>
-        <Link to={`/edit${path}`}>このパスで新規作成</Link>
+        <h1 className="text-2xl font-bold text-fg">ページが見つかりません</h1>
+        <p className="text-fg">パス: {path}</p>
+        <Link to={`/edit${path}`} className="text-primary">
+          このパスで新規作成
+        </Link>
       </AppLayout>
     )
   }
@@ -141,44 +144,54 @@ function PageViewPage() {
   return (
     <AppLayout>
       <Breadcrumbs path={path} />
-      <h1>{page.title}</h1>
-      <nav aria-label="ページ操作" className={styles.actions}>
-        <Link to="/" className={styles.listLink}>
+      <h1 className="text-2xl font-bold text-fg">{page.title}</h1>
+      <nav
+        aria-label="ページ操作"
+        className="my-6 flex flex-wrap items-center gap-3"
+      >
+        <Link to="/" className="mr-auto text-primary">
           一覧へ
         </Link>
         {perm.view && (
-          <Link to={`/history${path}`} className={styles.editButton}>
+          <Link
+            to={`/history${path}`}
+            className="inline-flex items-center rounded border border-primary px-3 py-1.5 text-primary hover:bg-primary/10"
+          >
             履歴
           </Link>
         )}
         {perm.edit && (
           <>
-            <Link to={`/edit${path}`} className={styles.editButton}>
+            <Link
+              to={`/edit${path}`}
+              className="inline-flex items-center rounded border border-primary px-3 py-1.5 text-primary hover:bg-primary/10"
+            >
               編集
             </Link>
-            <Link to={`/permissions${path}`} className={styles.editButton}>
+            <Link
+              to={`/permissions${path}`}
+              className="inline-flex items-center rounded border border-primary px-3 py-1.5 text-primary hover:bg-primary/10"
+            >
               権限設定
             </Link>
-            <button
-              type="button"
-              onClick={handleDelete}
-              className={styles.deleteButton}
-            >
+            <Button variant="danger" onClick={handleDelete}>
               削除
-            </button>
+            </Button>
           </>
         )}
       </nav>
-      <article>
+      <article className="prose-janus">
         <MarkdownRenderer body={page.body} />
       </article>
       {children.length > 0 && (
-        <section>
-          <h2>子ページ</h2>
-          <ul>
+        <section className="mt-8">
+          <h2 className="text-lg font-semibold text-fg">子ページ</h2>
+          <ul className="m-0 mt-2 list-none p-0">
             {children.map((child) => (
-              <li key={child.path}>
-                <Link to={`/view${child.path}`}>{child.title || child.path}</Link>
+              <li key={child.path} className="border-b border-border py-2">
+                <Link to={`/view${child.path}`} className="text-primary">
+                  {child.title || child.path}
+                </Link>
               </li>
             ))}
           </ul>
