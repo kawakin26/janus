@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ThemeToggle } from '../theme/ThemeToggle'
+import { clearMode } from '../storage/mode'
 import PageTree from './sidebar/PageTree'
 
 export interface AppLayoutProps {
@@ -175,6 +176,16 @@ function AppLayout({ children }: AppLayoutProps) {
               帰属表記
             </a>
             <span className="text-sm text-fg-muted">{user.username}</span>
+            <button
+              type="button"
+              onClick={() => {
+                clearMode()
+                location.reload()
+              }}
+              className="rounded border border-border bg-surface-raised px-3 py-1.5 text-sm text-fg hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring"
+            >
+              モード切替
+            </button>
             <button
               type="button"
               onClick={handleLogout}

@@ -2,27 +2,60 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
-import { StorageProvider } from './storage/StorageProvider'
+import { StorageProvider, createStorageClient } from './storage/StorageProvider'
+import { LocalClient } from './storage/local-client'
 import { AuthProvider } from './auth/AuthContext'
 import { ThemeProvider } from './theme/ThemeProvider'
+import { ModeGate } from './components/ModeGate'
+import { readMode } from './storage/mode'
+import type { Mode } from './storage/mode'
+import type { StorageClient } from './storage/types'
 import './index.css'
 
+// 選択済みモードに応じた StorageClient を生成する（design.md §2.3）。
+// ローカルモードでは IndexedDB 保存の永続化を要求する（§7.5・結果は使わず、存在時のみ呼ぶ）。
+function createClientForMode(mode: Mode): StorageClient {
+  if (mode === 'local') {
+    void navigator.storage?.persist?.()
+    return new LocalClient()
+  }
+  return createStorageClient()
+}
+
+// アプリ本体（モード判定込み）。テスト可能にするため named export。
+// モード未設定なら起動時選択画面（ModeGate）を出し、選択済みなら対応する client を
+// StorageProvider に注入してアプリを描画する。AuthProvider/App 以降は従来どおり。
+export function Root() {
+  const mode = readMode()
+  if (mode === null) {
+    return <ModeGate />
+  }
+  const client = createClientForMode(mode)
+  return (
+    <StorageProvider client={client}>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </StorageProvider>
+  )
+}
+
 // アプリのエントリポイント。
-// Provider の入れ子順は ThemeProvider > BrowserRouter > StorageProvider > AuthProvider > App。
+// Provider の入れ子順は ThemeProvider > BrowserRouter > Root（Root 内で StorageProvider 以降）。
 // ThemeProvider は配色テーマ（system/light/dark）のみを扱い他 Provider に依存しないため、
 // 既存の順序・挙動を変えないよう最外に 1 枚だけ足す（設計 §3.2）。
-// AuthProvider は useStorage() を使うので StorageProvider の内側、
-// RequireAuth / LoginPage が useNavigate / useLocation を使うので BrowserRouter の内側に置く。
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <ThemeProvider>
-      <BrowserRouter>
-        <StorageProvider>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </StorageProvider>
-      </BrowserRouter>
-    </ThemeProvider>
-  </React.StrictMode>,
-)
+// Root（ModeGate を含む）は useNavigate / useLocation 等を使う子を抱えるため BrowserRouter の内側に置く。
+// ブートストラップは #root 存在時のみ実行し、main.test.tsx が Root を import しても
+// render 副作用が走らないようにガードする。
+const rootEl = document.getElementById('root')
+if (rootEl) {
+  ReactDOM.createRoot(rootEl).render(
+    <React.StrictMode>
+      <ThemeProvider>
+        <BrowserRouter>
+          <Root />
+        </BrowserRouter>
+      </ThemeProvider>
+    </React.StrictMode>,
+  )
+}
