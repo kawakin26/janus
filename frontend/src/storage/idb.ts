@@ -11,6 +11,14 @@ export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
 
+    req.onsuccess = () => {
+      const db = req.result
+      // 別タブ・テスト等から version 変更/削除要求が来たら接続を閉じ、ブロックを防ぐ。
+      db.onversionchange = () => db.close()
+      resolve(db)
+    }
+    req.onerror = () => reject(req.error)
+
     req.onupgradeneeded = () => {
       const db = req.result
 
@@ -61,9 +69,6 @@ export function openDb(): Promise<IDBDatabase> {
         db.createObjectStore('meta', { keyPath: 'key' })
       }
     }
-
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
   })
 }
 
