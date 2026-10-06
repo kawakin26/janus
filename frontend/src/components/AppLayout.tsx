@@ -160,7 +160,7 @@ function AppLayout({ children }: AppLayoutProps) {
                 いずれも public/ に置いた静的ファイルへの <a> リンク。 */}
             <a
               className="text-xs text-fg-muted"
-              href="/LICENSE"
+              href="/LICENSE.html"
               target="_blank"
               rel="noreferrer"
             >
@@ -168,7 +168,7 @@ function AppLayout({ children }: AppLayoutProps) {
             </a>
             <a
               className="text-xs text-fg-muted"
-              href="/THIRD-PARTY-NOTICES.md"
+              href="/THIRD-PARTY-NOTICES.html"
               target="_blank"
               rel="noreferrer"
             >

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Janus — 第三者ライセンス表記</title>
+<style>
+  body { font-family: system-ui, sans-serif; line-height: 1.7; max-width: 800px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; background: #fff; }
+  @media (prefers-color-scheme: dark) { body { color: #e6e6e6; background: #1a1a1a; } a { color: #6db3f2; } }
+  h1 { font-size: 1.4rem; border-bottom: 1px solid #ccc; padding-bottom: .3rem; }
+  h2 { font-size: 1.15rem; margin-top: 2rem; }
+  h3 { font-size: 1rem; margin-top: 1.5rem; }
+  table { border-collapse: collapse; width: 100%; margin: .5rem 0; }
+  th, td { border: 1px solid #ccc; padding: .3rem .6rem; text-align: left; font-size: .9rem; }
+  th { background: #f5f5f5; }
+  @media (prefers-color-scheme: dark) { th { background: #2a2a2a; } th, td { border-color: #444; } }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; background: #f0f0f0; padding: .1em .3em; border-radius: 3px; }
+  @media (prefers-color-scheme: dark) { code { background: #2a2a2a; } }
+  ul { padding-left: 1.5rem; }
+  li { margin: .2rem 0; }
+  hr { border: none; border-top: 1px solid #ccc; margin: 1.5rem 0; }
+  p.note { font-size: .85rem; color: #666; }
+  @media (prefers-color-scheme: dark) { p.note { color: #999; } hr { border-color: #444; } }
+</style>
+</head>
+<body>
+
+<h1>第三者ライセンス表記（THIRD-PARTY NOTICES）</h1>
+
+<p>Janus 本体のコードは MIT License（<a href="/LICENSE.html">LICENSE</a> を参照）で公開しています。
+本ページは、Janus が<strong>同梱（再配布）</strong>または<strong>依存</strong>する第三者ソフトウェアと、
+そのライセンスを明示するものです。各第三者コンポーネントには、Janus の MIT ライセンスではなく、
+<strong>それぞれの元のライセンス</strong>が適用されます。</p>
+
+<p>MIT ライセンスの文言は Janus 自身の著作物に対するものであり、下記の同梱物・依存物には各自のライセンスが
+適用されます。</p>
+
+<hr>
+
+<h2>1. 同梱（ソースツリーに再配布しているもの）</h2>
+
+<p>リポジトリに実ファイルを含めて再配布しているコンポーネント。各ディレクトリに元の LICENSE / NOTICE を同梱
+しています。</p>
+
+<h3>draw.io / diagrams.net</h3>
+<ul>
+  <li><strong>用途:</strong> 作図の閲覧ビューア（GraphViewer）と編集 Web アプリ（embed）をセルフホスト同梱。</li>
+  <li><strong>バージョン:</strong> v32.0.2（無改変で再配布）</li>
+  <li><strong>ライセンス:</strong> Apache License 2.0</li>
+  <li><strong>著作権:</strong> Copyright 2005-2024 JGraph Ltd, draw.io AG</li>
+  <li><strong>出典:</strong> <a href="https://github.com/jgraph/drawio" rel="noreferrer" target="_blank">https://github.com/jgraph/drawio</a></li>
+  <li><strong>同梱場所:</strong> <code>frontend/public/drawio/</code>（ライセンス全文 <code>frontend/public/drawio/LICENSE</code>、帰属表記 <code>frontend/public/drawio/NOTICE</code>）</li>
+  <li><strong>備考:</strong> 配布物（<code>viewer/</code>・<code>webapp/js/</code> 配下の各ファイル）は公式リリースから無改変で同梱しています。
+    <code>webapp/js/PreConfig.js</code> および <code>webapp/js/PostConfig.js</code> は Janus 側で追加したオフライン設定ファイルで、
+    draw.io 本体の改変ではありません。JGraph Ltd / draw.io AG による推奨（endorsement）を含意しません。</li>
+  <li><strong>ステンシル／アイコンのライセンス（重要）:</strong> 同梱 <code>webapp/js/stencils.min.js</code> に内包されるステンシル
+    ライブラリおよびアイコン集合、ならびに <code>webapp/stencils/LICENSE</code> には、draw.io 本体の Apache-2.0 とは
+    <strong>別の利用制限ライセンス</strong>が適用されます。これはこれらのアイコン／ステンシル（およびその派生物）を
+    Atlassian 製品や Atlassian マーケットプレイス／プラグイン生態系向けに利用・配布・組み込みすることを
+    書面許諾なしに制限する条項で、全文は <code>frontend/public/drawio/webapp/stencils/LICENSE</code> にあります。
+    この制限は、本ソフトウェアで作成したエンドユーザーの図面出力（書き出し画像・文書等）には適用されません。
+    Janus は Atlassian 向け製品ではないため実利用上の抵触は想定していませんが、再配布の正確性のため明示します。</li>
+</ul>
+
+<h3>ezjww（JWW/Jw_cad リーダ・WebAssembly ビルド）</h3>
+<ul>
+  <li><strong>用途:</strong> JWW ファイルのブラウザ内パース（CAD→SVG 変換）。</li>
+  <li><strong>ライセンス:</strong> MIT License</li>
+  <li><strong>出典:</strong> <a href="https://github.com/monozukuri-ai/ezjww" rel="noreferrer" target="_blank">https://github.com/monozukuri-ai/ezjww</a>（タグ v0.3.4 / クレート <code>ezjww-wasm</code> 0.2.10）</li>
+  <li><strong>同梱場所:</strong> <code>frontend/src/vendor/ezjww-web/</code>（ライセンス全文 <code>frontend/src/vendor/ezjww-web/LICENSE</code>、ビルド元の記録 <code>frontend/src/vendor/ezjww-web/SOURCE.md</code>）</li>
+  <li><strong>備考:</strong> <code>wasm-pack --target web</code> で自ビルドした成果物（<code>.wasm</code> + グルー JS）を同梱しています。</li>
+</ul>
+
+<hr>
+
+<h2>2. 依存（パッケージマネージャ経由で取得。ソースは同梱していない）</h2>
+
+<p>ビルド・実行時に取得する依存。配布形態によっては成果物に含まれます。主要なもののライセンスを示します
+（推移的依存を含む完全な一覧は各パッケージマネージャの出力を参照してください）。</p>
+
+<h3>フロントエンド（npm, <code>frontend/package.json</code>）</h3>
+
+<table>
+  <thead>
+    <tr><th>パッケージ</th><th>ライセンス</th><th>用途</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>react, react-dom</td><td>MIT</td><td>UI フレームワーク</td></tr>
+    <tr><td>react-router-dom</td><td>MIT</td><td>ルーティング</td></tr>
+    <tr><td>react-markdown</td><td>MIT</td><td>Markdown レンダリング</td></tr>
+    <tr><td>remark-gfm</td><td>MIT</td><td>GFM 拡張</td></tr>
+    <tr><td>remark-directive</td><td>MIT</td><td>ディレクティブ記法（<code>:::custom-map</code> / <code>:::drawio</code>）</td></tr>
+    <tr><td>unist-util-visit</td><td>MIT</td><td>AST 走査</td></tr>
+    <tr><td>dxf-parser</td><td>MIT</td><td>DXF ファイルのパース（CAD→SVG 変換）</td></tr>
+    <tr><td>vite, vitest, typescript, eslint ほか（開発依存）</td><td>MIT ほか</td><td>ビルド・テスト・静的検査</td></tr>
+  </tbody>
+</table>
+
+<h3>バックエンド（pip, <code>backend/requirements.txt</code>）</h3>
+
+<table>
+  <thead>
+    <tr><th>パッケージ</th><th>ライセンス</th><th>用途</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Django</td><td>BSD-3-Clause</td><td>Web フレームワーク</td></tr>
+    <tr><td>djangorestframework</td><td>BSD-3-Clause</td><td>REST API</td></tr>
+    <tr><td>django-cors-headers</td><td>MIT</td><td>CORS 制御</td></tr>
+    <tr><td>dj-database-url</td><td>BSD-3-Clause</td><td>DB 接続 URL 解析</td></tr>
+    <tr><td>asgiref</td><td>BSD-3-Clause</td><td>ASGI 参照実装（推移依存）</td></tr>
+    <tr><td>sqlparse</td><td>BSD-3-Clause</td><td>SQL パース（推移依存）</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h2>3. ライセンス互換性に関する補足</h2>
+
+<p>Janus 本体の MIT License は、上記の Apache-2.0 / BSD-3-Clause / MIT の各コンポーネントと互換性があります
+（いずれも寛容ライセンスで、強いコピーレフトの感染性はありません）。同梱している Apache-2.0 の draw.io は、
+Apache-2.0 のまま再配布しており、Janus の MIT ライセンスに再ライセンスしているわけではありません。</p>
+
+<p class="note">本表記は便宜のための整理であり、法的助言ではありません。再配布・商用利用にあたっては各ライセンス原文を
+確認してください。</p>
+
+</body>
+</html>
