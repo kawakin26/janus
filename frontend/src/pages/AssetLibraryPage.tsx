@@ -18,9 +18,14 @@ import {
   CadEngineUnavailableError,
   type CadOrientation,
 } from '../markdown/custom-map/cad/convert'
-import styles from './AssetLibraryPage.module.css'
 
 const CAD_ORIENTATIONS: CadOrientation[] = [0, 90, 180, 270]
+
+// 自前「ファイルを選択」ボタン（normal 相当）。
+const FILE_BUTTON_CLASS =
+  'inline-flex items-center rounded border border-border bg-surface-raised px-3 py-1 ' +
+  'hover:bg-surface disabled:opacity-50 disabled:cursor-not-allowed ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring'
 
 // 統合アップロード input の accept ヒント（画像/SVG + CAD）。
 // あくまで UI ヒントで、実処理の分岐は isCadFile によるファイル名判定で行う（accept は信頼しない）。
@@ -271,7 +276,7 @@ function AssetLibraryPage() {
   return (
     <AppLayout>
       <h1>アセットライブラリ</h1>
-      <p className={styles.location}>
+      <p className="flex items-center gap-3">
         場所: {folderId === null ? 'ルート' : `フォルダ ${folderId}`}
         {folderId !== null && (
           <button type="button" onClick={() => setFolderId(null)}>
@@ -280,9 +285,9 @@ function AssetLibraryPage() {
         )}
       </p>
 
-      <section className={styles.section} aria-labelledby="folder-heading">
+      <section className="my-6" aria-labelledby="folder-heading">
         <h2 id="folder-heading">フォルダ</h2>
-        <form onSubmit={handleCreateFolder} className={styles.form}>
+        <form onSubmit={handleCreateFolder} className="grid gap-2 max-w-lg mb-4">
           <label htmlFor="folder-name">新しいフォルダ名</label>
           <input
             id="folder-name"
@@ -294,7 +299,7 @@ function AssetLibraryPage() {
         {loading ? null : folders.length === 0 ? (
           <p>フォルダがありません</p>
         ) : (
-          <ul className={styles.list}>
+          <ul className="list-disc pl-6 [&>li]:my-2">
             {folders.map((folder) => (
               <li key={folder.id}>
                 <button type="button" onClick={() => setFolderId(folder.id)}>
@@ -306,14 +311,14 @@ function AssetLibraryPage() {
         )}
       </section>
 
-      <section className={styles.section} aria-labelledby="asset-heading">
+      <section className="my-6" aria-labelledby="asset-heading">
         <h2 id="asset-heading">アセット</h2>
-        <form onSubmit={handleUpload} className={styles.form}>
+        <form onSubmit={handleUpload} className="grid gap-2 max-w-lg mb-4">
           <label htmlFor="asset-file">ファイル</label>
           <input
             id="asset-file"
             ref={fileInputRef}
-            className={styles.visuallyHiddenInput}
+            className="sr-only"
             type="file"
             accept={UPLOAD_ACCEPT}
             onChange={(event) => {
@@ -324,10 +329,10 @@ function AssetLibraryPage() {
             }}
           />
           {/* ネイティブ input を隠し、自前ボタン＋ファイル名表示に 1 箇所へ統合して二重表示を解消する。 */}
-          <div className={styles.fileField}>
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              className={styles.fileButton}
+              className={FILE_BUTTON_CLASS}
               onClick={() => fileInputRef.current?.click()}
               aria-describedby="asset-file-name"
               disabled={cadConverting}
@@ -336,7 +341,7 @@ function AssetLibraryPage() {
             </button>
             <span
               id="asset-file-name"
-              className={selectedFile !== null ? styles.fileName : styles.fileNameEmpty}
+              className={selectedFile !== null ? 'text-fg' : 'text-fg-muted'}
               aria-live="polite"
             >
               {selectedFile !== null ? `選択中: ${selectedFile.name}` : 'ファイルが選択されていません'}
@@ -373,13 +378,17 @@ function AssetLibraryPage() {
             アップロード
           </button>
           {cadConverting && (
-            <span role="status" className={styles.spinner}>
+            <span role="status" className="inline-flex items-center gap-2 font-semibold text-primary">
+              <span
+                aria-hidden="true"
+                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+              />
               変換中...
             </span>
           )}
           {uploadNotice !== null &&
             (uploadNotice.kind === 'error' ? (
-              <p role="alert" className={styles.error}>
+              <p role="alert" className="text-danger">
                 {uploadNotice.text}
               </p>
             ) : (
@@ -389,7 +398,7 @@ function AssetLibraryPage() {
         {loading ? null : assets.length === 0 ? (
           <p>アセットがありません</p>
         ) : (
-          <ul className={styles.list}>
+          <ul className="list-disc pl-6 [&>li]:my-2">
             {assets.map((asset) => (
               <li key={asset.id}>
                 <span>{asset.alias || asset.filename}</span>{' '}

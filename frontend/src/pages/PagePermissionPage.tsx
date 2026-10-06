@@ -22,7 +22,12 @@ import Breadcrumbs from '../components/Breadcrumbs'
 import { usePageError } from './use-page-error'
 import { ApiError } from '../storage/types'
 import type { PermissionEntry } from '../storage/types'
-import styles from './PagePermissionPage.module.css'
+
+// 削除ボタン（danger 枠線型・元は赤枠 #dc2626）。
+const REVOKE_BUTTON_CLASS =
+  'inline-flex items-center rounded border border-danger bg-surface px-3 py-1 ' +
+  'text-danger hover:bg-danger/10 ml-auto ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring'
 
 type PrincipalType = 'user' | 'group'
 type Action = 'view' | 'edit'
@@ -190,16 +195,19 @@ function PagePermissionPage() {
         {entries.length === 0 ? (
           <p>権限エントリがありません。</p>
         ) : (
-          <ul className={styles.entryList}>
+          <ul className="list-none p-0 mb-6">
             {entries.map((entry) => (
-              <li key={entry.id} className={styles.entryItem}>
+              <li
+                key={entry.id}
+                className="flex flex-wrap items-center gap-3 border-b border-border py-2"
+              >
                 <span>
                   {entry.principalType === 'user' ? 'ユーザー' : 'グループ'} #
                   {entry.principalId}
                 </span>
                 <span>{entry.action === 'view' ? '閲覧' : '編集'}</span>
-                <label className={styles.entryEffect}>
-                  <span className={styles.visuallyHidden}>
+                <label className="inline-flex items-center">
+                  <span className="sr-only">
                     効果（#{entry.id}）
                   </span>
                   <select
@@ -215,7 +223,7 @@ function PagePermissionPage() {
                 </label>
                 <button
                   type="button"
-                  className={styles.revokeButton}
+                  className={REVOKE_BUTTON_CLASS}
                   onClick={() => handleRevoke(entry.id)}
                 >
                   削除
@@ -228,13 +236,13 @@ function PagePermissionPage() {
 
       <section>
         <h2>権限を付与</h2>
-        <form onSubmit={handleGrant} noValidate className={styles.form}>
+        <form onSubmit={handleGrant} noValidate className="flex flex-wrap items-end gap-4">
           {formError !== null && (
-            <p role="alert" aria-live="assertive">
+            <p role="alert" aria-live="assertive" className="rounded px-3 py-2 bg-danger/10 text-danger">
               {formError}
             </p>
           )}
-          <div className={styles.field}>
+          <div className="flex flex-col gap-1">
             <label htmlFor="principalType">主体種別</label>
             <select
               id="principalType"
@@ -245,7 +253,7 @@ function PagePermissionPage() {
               <option value="group">グループ</option>
             </select>
           </div>
-          <div className={styles.field}>
+          <div className="flex flex-col gap-1">
             <label htmlFor="principalId">主体ID</label>
             <input
               id="principalId"
@@ -255,7 +263,7 @@ function PagePermissionPage() {
               onChange={(e) => setPrincipalId(e.target.value)}
             />
           </div>
-          <div className={styles.field}>
+          <div className="flex flex-col gap-1">
             <label htmlFor="action">操作</label>
             <select
               id="action"
@@ -266,7 +274,7 @@ function PagePermissionPage() {
               <option value="edit">編集</option>
             </select>
           </div>
-          <div className={styles.field}>
+          <div className="flex flex-col gap-1">
             <label htmlFor="effect">効果</label>
             <select
               id="effect"
@@ -277,7 +285,7 @@ function PagePermissionPage() {
               <option value="deny">拒否</option>
             </select>
           </div>
-          <div className={styles.actions}>
+          <div className="flex items-center">
             <button type="submit" disabled={submitting}>
               {submitting ? '付与中...' : '付与'}
             </button>

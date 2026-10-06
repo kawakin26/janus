@@ -7,7 +7,7 @@
 // CAD 変換・GUI 編集・写真アップロードはフェーズ 3 のためここでは実装しない。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useStorage } from '../../storage/StorageProvider'
 import { usePageError } from '../../pages/use-page-error'
 import type { PageErrorHandler } from '../../pages/use-page-error'
@@ -95,58 +95,6 @@ interface MapModalProps {
   storage: ReturnType<typeof useStorage>
   onError: PageErrorHandler
   onClose: () => void
-}
-
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  top: 0,
-  left: 0,
-  width: '100vw',
-  height: '100vh',
-  backgroundColor: 'rgba(0,0,0,0.7)',
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center',
-  zIndex: 9999,
-}
-
-const contentStyle: CSSProperties = {
-  position: 'relative',
-  backgroundColor: '#fff',
-  padding: '20px',
-  borderRadius: '8px',
-  maxWidth: '90vw',
-  maxHeight: '90vh',
-  boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-}
-
-const closeBtnStyle: CSSProperties = {
-  position: 'absolute',
-  top: '-15px',
-  right: '-15px',
-  background: '#000',
-  color: '#fff',
-  border: 'none',
-  borderRadius: '50%',
-  width: '30px',
-  height: '30px',
-  fontSize: '20px',
-  cursor: 'pointer',
-  zIndex: 10,
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center',
-}
-
-const viewportStyle: CSSProperties = {
-  position: 'relative',
-  overflow: 'hidden',
-  width: 'min(80vw, 900px)',
-  height: 'min(75vh, 675px)',
-  cursor: 'grab',
-  touchAction: 'none',
-  backgroundColor: '#f0f0f0',
-  borderRadius: '4px',
 }
 
 /** マップ画像とマーカーを表示するモーダル。開くたびに画像 URL を解決する。 */
@@ -406,14 +354,22 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
 
   return (
     <div
-      style={overlayStyle}
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="地図ビューア"
     >
-      <div style={contentStyle} onClick={(e) => e.stopPropagation()}>
-        <button type="button" style={closeBtnStyle} onClick={onClose} aria-label="閉じる">
+      <div
+        className="relative rounded-lg bg-surface-raised p-5 shadow-sm max-w-[90vw] max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="absolute -top-4 -right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border-0 bg-fg text-surface text-xl cursor-pointer"
+          onClick={onClose}
+          aria-label="閉じる"
+        >
           ×
         </button>
 
@@ -426,7 +382,8 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
         ) : (
           <div
             ref={viewportRef}
-            style={viewportStyle}
+            className="relative overflow-hidden rounded bg-surface-raised cursor-grab touch-none"
+            style={{ width: 'min(80vw, 900px)', height: 'min(75vh, 675px)' }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -464,7 +421,7 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
           </div>
         )}
         {errorMessage !== null && status !== 'error' && (
-          <p role="alert" style={{ margin: '8px 0 0', color: '#b00020' }}>{errorMessage}</p>
+          <p role="alert" className="text-danger" style={{ margin: '8px 0 0' }}>{errorMessage}</p>
         )}
       </div>
 
@@ -476,13 +433,13 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
 /** マップが解決できなかったときの日本語メッセージ（design 9 章の思想）。 */
 function MapNotFound({ fileName }: { fileName: string }) {
   return (
-    <div style={{ width: 'min(80vw, 640px)', padding: '8px 4px', textAlign: 'center', color: '#333' }}>
+    <div className="text-fg" style={{ width: 'min(80vw, 640px)', padding: '8px 4px', textAlign: 'center' }}>
       <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '8px' }}>
         マップ/画像が見つかりません
       </div>
-      <div style={{ fontSize: '13px', color: '#666', lineHeight: 1.7 }}>
+      <div className="text-fg-muted" style={{ fontSize: '13px', lineHeight: 1.7 }}>
         指定されたマップ{' '}
-        <code style={{ fontFamily: 'monospace', background: '#f2f2f2', padding: '1px 4px', borderRadius: '3px' }}>
+        <code className="bg-surface rounded-sm" style={{ fontFamily: 'monospace', padding: '1px 4px' }}>
           {fileName}
         </code>{' '}
         が見つかりませんでした。
@@ -659,19 +616,7 @@ function DetailPopup({ detail, onClose }: DetailPopupProps) {
   const single = photos.length === 1
   return (
     <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 10000,
-      }}
+      className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/80"
       onClick={onClose}
       onContextMenu={(e) => {
         e.preventDefault()

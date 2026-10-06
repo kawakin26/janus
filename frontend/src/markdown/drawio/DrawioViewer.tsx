@@ -15,7 +15,6 @@
 // rehype-raw は不採用のまま（生 HTML 無効）。XML は mxGraph テキストのみを扱い外部アセット依存なし。
 
 import { useEffect, useRef, useState } from 'react'
-import styles from './DrawioViewer.module.css'
 
 /** 同梱 GraphViewer のスクリプトパス（public/ 配下＝外部参照ゼロ）。 */
 const VIEWER_SCRIPT_SRC = '/drawio/viewer/viewer-static.min.js'
@@ -151,11 +150,15 @@ function DrawioViewer({ xml }: DrawioViewerProps) {
   }, [xml])
 
   return (
-    <div className={styles.container} data-drawio-container="true">
+    <div className="relative block max-w-full overflow-auto" data-drawio-container="true">
       {/* GraphViewer が描画する受け皿。children は React で描かず命令的に差し替える。 */}
       <div ref={mountRef} />
       {status !== 'rendered' && (
-        <div className={styles.placeholder} role="img" aria-label="drawio 図">
+        <div
+          className="block rounded border border-dashed border-border bg-surface-raised px-4 py-3 text-sm text-fg-muted leading-normal whitespace-pre-wrap"
+          role="img"
+          aria-label="drawio 図"
+        >
           {status === 'fallback' ? 'drawio 図を表示できません' : 'drawio 図を読み込み中…'}
         </div>
       )}

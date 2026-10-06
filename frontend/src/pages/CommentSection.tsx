@@ -15,8 +15,30 @@ import { useCallback, useEffect, useState } from 'react'
 import { useStorage } from '../storage/StorageProvider'
 import { useAuth } from '../auth/AuthContext'
 import { usePageError } from './use-page-error'
-import styles from './CommentSection.module.css'
 import type { Comment } from '../storage/types'
+
+// 投稿/保存ボタン（accent 塗り・元 primaryButton は青塗り）。
+const PRIMARY_BUTTON_CLASS =
+  'inline-flex items-center rounded bg-primary px-3 py-1.5 text-primary-contrast ' +
+  'hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring'
+
+// 編集/キャンセルボタン（accent 枠線型・元 secondaryButton は青枠）。
+const SECONDARY_BUTTON_CLASS =
+  'inline-flex items-center rounded border border-primary bg-surface px-3 py-1.5 ' +
+  'text-primary hover:bg-primary/10 ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring'
+
+// 削除ボタン（danger 枠線型・元 dangerButton は赤枠）。
+const DANGER_BUTTON_CLASS =
+  'inline-flex items-center rounded border border-danger bg-surface px-3 py-1.5 ' +
+  'text-danger hover:bg-danger/10 ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring'
+
+// コメント本文のテキストエリア。
+const TEXTAREA_CLASS =
+  'w-full box-border rounded border border-border bg-surface px-2 py-2 resize-y text-fg ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring'
 
 interface CommentSectionProps {
   /** 対象ページのパス（例: /docs/intro）。 */
@@ -147,7 +169,7 @@ function CommentSection({ path, canEdit }: CommentSectionProps) {
   )
 
   return (
-    <section className={styles.section} aria-label="コメント">
+    <section className="mt-8 pt-6 border-t border-border" aria-label="コメント">
       <h2>コメント</h2>
 
       {loading ? (
@@ -159,44 +181,47 @@ function CommentSection({ path, canEdit }: CommentSectionProps) {
       ) : comments.length === 0 ? (
         <p>まだコメントはありません。</p>
       ) : (
-        <ul className={styles.list}>
+        <ul className="list-none m-0 mb-6 p-0 flex flex-col gap-4">
           {comments.map((comment) => (
-            <li key={comment.id} className={styles.item}>
-              <div className={styles.meta}>
-                <span className={styles.author}>
+            <li
+              key={comment.id}
+              className="rounded-md border border-border bg-surface-raised p-3"
+            >
+              <div className="flex gap-3 items-baseline mb-1.5 text-sm text-fg-muted">
+                <span className="font-semibold text-fg">
                   {comment.author?.username ?? '(削除済みユーザー)'}
                 </span>
                 <time dateTime={comment.created_at}>{comment.created_at}</time>
               </div>
               {editingId === comment.id ? (
-                <div className={styles.editForm}>
-                  <label className={styles.srOnly} htmlFor={`edit-${comment.id}`}>
+                <div className="flex flex-col gap-2">
+                  <label className="sr-only" htmlFor={`edit-${comment.id}`}>
                     コメントを編集
                   </label>
                   <textarea
                     id={`edit-${comment.id}`}
-                    className={styles.textarea}
+                    className={TEXTAREA_CLASS}
                     value={editDraft}
                     onChange={(event) => setEditDraft(event.target.value)}
                     rows={3}
                   />
                   {editError !== null && (
-                    <p role="alert" aria-live="assertive" className={styles.error}>
+                    <p role="alert" aria-live="assertive" className="m-0 text-sm text-danger">
                       {editError}
                     </p>
                   )}
-                  <div className={styles.actions}>
+                  <div className="flex flex-wrap gap-2 mt-2">
                     <button
                       type="button"
                       onClick={() => void handleUpdate(comment.id)}
-                      className={styles.primaryButton}
+                      className={PRIMARY_BUTTON_CLASS}
                     >
                       保存
                     </button>
                     <button
                       type="button"
                       onClick={cancelEdit}
-                      className={styles.secondaryButton}
+                      className={SECONDARY_BUTTON_CLASS}
                     >
                       キャンセル
                     </button>
@@ -205,20 +230,20 @@ function CommentSection({ path, canEdit }: CommentSectionProps) {
               ) : (
                 <>
                   {/* 本文はテキストノードとして描画（dangerouslySetInnerHTML 不使用）。 */}
-                  <p className={styles.body}>{comment.body}</p>
+                  <p className="m-0 whitespace-pre-wrap break-words">{comment.body}</p>
                   {canModify(comment) && (
-                    <div className={styles.actions}>
+                    <div className="flex flex-wrap gap-2 mt-2">
                       <button
                         type="button"
                         onClick={() => beginEdit(comment)}
-                        className={styles.secondaryButton}
+                        className={SECONDARY_BUTTON_CLASS}
                       >
                         編集
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleDelete(comment.id)}
-                        className={styles.dangerButton}
+                        className={DANGER_BUTTON_CLASS}
                       >
                         削除
                       </button>
@@ -231,28 +256,28 @@ function CommentSection({ path, canEdit }: CommentSectionProps) {
         </ul>
       )}
 
-      <form onSubmit={handlePost} className={styles.postForm}>
-        <label className={styles.srOnly} htmlFor="comment-draft">
+      <form onSubmit={handlePost} className="flex flex-col gap-2">
+        <label className="sr-only" htmlFor="comment-draft">
           コメントを投稿
         </label>
         <textarea
           id="comment-draft"
-          className={styles.textarea}
+          className={TEXTAREA_CLASS}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           rows={3}
           placeholder="コメントを入力"
         />
         {postError !== null && (
-          <p role="alert" aria-live="assertive" className={styles.error}>
+          <p role="alert" aria-live="assertive" className="m-0 text-sm text-danger">
             {postError}
           </p>
         )}
-        <div className={styles.actions}>
+        <div className="flex flex-wrap gap-2 mt-2">
           <button
             type="submit"
             disabled={posting}
-            className={styles.primaryButton}
+            className={PRIMARY_BUTTON_CLASS}
           >
             投稿
           </button>

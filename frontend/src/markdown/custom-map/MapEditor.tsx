@@ -16,7 +16,16 @@ import { usePageError } from '../../pages/use-page-error'
 import type { AssetRef, Asset, Folder } from '../../storage/types'
 import type { MapData, MarkerData, PhotoData } from './types'
 import { clamp } from './map-utils'
-import styles from './MapEditor.module.css'
+
+// field（ラベル付き入力の縦積み）。ラベルは可読性のため text-fg（薄い muted ではなく本文色）。
+const FIELD_CLASS = 'grid gap-1 [&>label]:text-sm [&>label]:text-fg'
+
+// 参考写真の file input。ネイティブのファイル選択ボタン（::file-selector-button）に
+// 枠線+背景+余白のボタン体裁を与え、素のテキストと区別できるようにする。
+const PHOTO_INPUT_CLASS =
+  'file:inline-flex file:items-center file:rounded file:border file:border-border ' +
+  'file:bg-surface-raised file:px-3 file:py-1.5 file:text-fg file:cursor-pointer ' +
+  'hover:file:bg-surface file:mr-3'
 
 export interface MapEditorProps {
   mapData: MapData
@@ -136,7 +145,7 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
   const handlePreviewClick = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (dragging.current !== null) return
-      if ((e.target as HTMLElement).closest(`.${styles.marker}`)) return
+      if ((e.target as HTMLElement).closest('[aria-label^="マーカー"]')) return
       const rect = previewRef.current?.getBoundingClientRect()
       if (!rect || rect.width === 0 || rect.height === 0) return
       const x = clampCoord(((e.clientX - rect.left) / rect.width) * 100)
@@ -235,15 +244,15 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
   )
 
   return (
-    <div className={styles.editor}>
+    <div className="grid gap-4 max-w-5xl">
       {error !== null && (
-        <p role="alert" className={styles.error}>
+        <p role="alert" className="text-danger">
           {error}
         </p>
       )}
 
-      <div className={styles.toolbar}>
-        <div className={styles.field}>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className={FIELD_CLASS}>
           <label htmlFor="map-editor-folder">フォルダ</label>
           <select
             id="map-editor-folder"
@@ -258,7 +267,7 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
             ))}
           </select>
         </div>
-        <div className={styles.field}>
+        <div className={FIELD_CLASS}>
           <label htmlFor="map-editor-asset">マップ画像</label>
           <select
             id="map-editor-asset"
@@ -283,15 +292,15 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
       {previewUrl !== null ? (
         <div
           ref={previewRef}
-          className={styles.preview}
+          className="relative inline-block max-w-full overflow-hidden rounded border border-border bg-surface-raised cursor-crosshair"
           onPointerDown={handlePreviewClick}
           data-testid="map-editor-preview"
         >
-          <img className={styles.previewImage} src={previewUrl} alt="マッププレビュー" draggable={false} />
+          <img className="block max-w-full h-auto select-none" src={previewUrl} alt="マッププレビュー" draggable={false} />
           {mapData.markers.map((marker, i) => (
             <div
               key={i}
-              className={styles.marker}
+              className="absolute -translate-x-1/2 -translate-y-1/2 h-3.5 w-3.5 rounded-full border-2 border-white shadow-[0_1px_3px_rgba(0,0,0,0.4)] cursor-grab touch-none data-[selected=true]:outline data-[selected=true]:outline-2 data-[selected=true]:outline-primary data-[selected=true]:outline-offset-2"
               data-selected={selected === i ? 'true' : 'false'}
               style={{ left: `${marker.x}%`, top: `${marker.y}%`, backgroundColor: marker.color }}
               onPointerDown={onMarkerPointerDown(i)}
@@ -302,17 +311,21 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
           ))}
         </div>
       ) : (
-        <div className={styles.placeholder}>
+        <div className="p-8 text-center text-fg-muted">
           マップ画像を選択すると、画像上をクリックしてマーカーを配置できます。
         </div>
       )}
 
-      <div className={styles.markerList}>
+      <div className="grid gap-3">
         <h3>マーカー ({mapData.markers.length})</h3>
         {mapData.markers.map((marker, i) => (
-          <div key={i} className={styles.markerRow} data-selected={selected === i ? 'true' : 'false'}>
-            <div className={styles.inlineFields}>
-              <div className={styles.field}>
+          <div
+            key={i}
+            className="grid gap-2 rounded border border-border p-3 data-[selected=true]:border-primary"
+            data-selected={selected === i ? 'true' : 'false'}
+          >
+            <div className="flex flex-wrap gap-3">
+              <div className={FIELD_CLASS}>
                 <label htmlFor={`marker-${i}-label`}>ラベル</label>
                 <input
                   id={`marker-${i}-label`}
@@ -322,7 +335,7 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
                   onChange={(e) => patchMarker(i, { label: e.target.value })}
                 />
               </div>
-              <div className={styles.field}>
+              <div className={FIELD_CLASS}>
                 <label htmlFor={`marker-${i}-color`}>色</label>
                 <input
                   id={`marker-${i}-color`}
@@ -331,7 +344,7 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
                   onChange={(e) => patchMarker(i, { color: e.target.value })}
                 />
               </div>
-              <div className={styles.field}>
+              <div className={FIELD_CLASS}>
                 <label htmlFor={`marker-${i}-x`}>X (%)</label>
                 <input
                   id={`marker-${i}-x`}
@@ -343,7 +356,7 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
                   onChange={(e) => patchMarker(i, { x: clampCoord(Number(e.target.value)) })}
                 />
               </div>
-              <div className={styles.field}>
+              <div className={FIELD_CLASS}>
                 <label htmlFor={`marker-${i}-y`}>Y (%)</label>
                 <input
                   id={`marker-${i}-y`}
@@ -356,7 +369,7 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
                 />
               </div>
             </div>
-            <div className={styles.field}>
+            <div className={FIELD_CLASS}>
               <label htmlFor={`marker-${i}-desc`}>説明</label>
               <textarea
                 id={`marker-${i}-desc`}
@@ -367,7 +380,7 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
             </div>
 
             {marker.photos.length > 0 && (
-              <ul className={styles.photoList}>
+              <ul className="list-disc pl-5 my-1 [&>li]:my-1">
                 {marker.photos.map((photo, pi) => (
                   <li key={pi}>
                     {photoLabel(photo.assetRef)}
@@ -379,10 +392,11 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
               </ul>
             )}
 
-            <div className={styles.field}>
+            <div className={FIELD_CLASS}>
               <label htmlFor={`marker-${i}-photo`}>参考写真を追加</label>
               <input
                 id={`marker-${i}-photo`}
+                className={PHOTO_INPUT_CLASS}
                 type="file"
                 accept="image/*"
                 onChange={(e) => {

@@ -27,9 +27,17 @@ import type {
   EffectivePermission,
   RevisionSummary,
 } from '../storage/types'
-import styles from './PageHistoryPage.module.css'
 
 const PAGE_SIZE = 50
+
+// 復元ボタン（accent 枠線型・元は青枠 #2563eb）。
+const RESTORE_BUTTON_CLASS =
+  'inline-flex items-center rounded border border-primary bg-surface-raised px-3 py-1 ' +
+  'text-primary hover:bg-primary/10 ml-auto ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring'
+
+// 差分行の op 別色（統一性優先で success/danger トークンの /alpha 下地に寄せる）。
+const DIFF_ROW_BASE = 'flex gap-2 px-2 py-0.5 whitespace-pre-wrap'
 
 function PageHistoryPage() {
   const splat = useParams()['*'] ?? ''
@@ -174,9 +182,9 @@ function PageHistoryPage() {
   }
 
   const opClassName = (op: DiffLine['op']): string => {
-    if (op === 'add') return styles.diffAdd
-    if (op === 'del') return styles.diffDel
-    return styles.diffEqual
+    if (op === 'add') return `${DIFF_ROW_BASE} bg-success/10 text-success`
+    if (op === 'del') return `${DIFF_ROW_BASE} bg-danger/10 text-danger`
+    return `${DIFF_ROW_BASE} text-fg`
   }
 
   const opLabel = (op: DiffLine['op']): string => {
@@ -196,18 +204,21 @@ function PageHistoryPage() {
         {revisions.length === 0 ? (
           <p>リビジョンがありません。</p>
         ) : (
-          <ul className={styles.revisionList} aria-label="リビジョン一覧">
+          <ul className="list-none p-0 mb-4" aria-label="リビジョン一覧">
             {revisions.map((rev) => (
-              <li key={rev.id} className={styles.revisionItem}>
-                <span className={styles.revisionNumber}>#{rev.number}</span>
-                <span className={styles.revisionMeta}>{rev.created_at}</span>
-                <span className={styles.revisionMeta}>
+              <li
+                key={rev.id}
+                className="flex flex-wrap items-center gap-3 border-b border-border py-2"
+              >
+                <span className="min-w-12 font-semibold">#{rev.number}</span>
+                <span className="text-sm text-fg-muted">{rev.created_at}</span>
+                <span className="text-sm text-fg-muted">
                   {rev.author ? rev.author.username : '不明'}
                 </span>
                 {perm.edit && (
                   <button
                     type="button"
-                    className={styles.restoreButton}
+                    className={RESTORE_BUTTON_CLASS}
                     onClick={() => handleRestore(rev.number)}
                   >
                     このリビジョンに復元
@@ -217,7 +228,7 @@ function PageHistoryPage() {
             ))}
           </ul>
         )}
-        <nav aria-label="ページング" className={styles.paging}>
+        <nav aria-label="ページング" className="flex gap-3 mb-6">
           <button
             type="button"
             disabled={offset === 0}
@@ -237,7 +248,7 @@ function PageHistoryPage() {
 
       <section>
         <h2>差分表示</h2>
-        <div className={styles.diffControls}>
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           <label htmlFor="diff-from">比較元</label>
           <select
             id="diff-from"
@@ -278,18 +289,18 @@ function PageHistoryPage() {
           </p>
         )}
         {diff !== null && (
-          <ul className={styles.diffList}>
+          <ul className="list-none p-0 m-0 font-mono text-sm">
             {diff.map((entry, index) => (
               <li
                 key={index}
                 className={opClassName(entry.op)}
                 data-op={entry.op}
               >
-                <span className={styles.diffOp} aria-hidden="true">
+                <span className="w-4 text-center select-none" aria-hidden="true">
                   {entry.op === 'add' ? '+' : entry.op === 'del' ? '-' : ' '}
                 </span>
-                <span className={styles.visuallyHidden}>{opLabel(entry.op)}</span>
-                <span className={styles.diffText}>{entry.line}</span>
+                <span className="sr-only">{opLabel(entry.op)}</span>
+                <span className="flex-1">{entry.line}</span>
               </li>
             ))}
           </ul>
