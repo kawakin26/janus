@@ -86,3 +86,13 @@ htmlcov/
 .pytest_cache/
 .tox/
 coverage/
+# ===== spec 配下の派生物（レビュー・計画・検証ログ） =====
+# spec 本体（requirements.md / design.md / tasks.md）のみ追跡し、
+# エージェントが生成するレビュー/計画/検証ドキュメントは追跡しない。
+.kiro/specs/**/*-review.md
+.kiro/specs/**/*-review.json
+.kiro/specs/**/*-verification.md
+.kiro/specs/**/*-plan.md
+.kiro/specs/**/review.json
+.kiro/specs/**/design-review.md
+.kiro/specs/**/design-review.json
