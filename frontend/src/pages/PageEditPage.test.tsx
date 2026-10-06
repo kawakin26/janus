@@ -104,7 +104,7 @@ describe('PageEditPage', () => {
     })
   })
 
-  it('drawio 全画面トグルで全画面クラスが付き、再トグル/Esc で外れる', async () => {
+  it('drawio 全画面トグルで dialog ロールが付き、再トグル/Esc で外れる', async () => {
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
       getPage: vi.fn(async () => makePage()),
@@ -121,22 +121,22 @@ describe('PageEditPage', () => {
     // 描画エディタ（iframe）が開くまで待つ。
     const frame = await screen.findByTitle('drawio 描画エディタ')
     const editor = frame.parentElement as HTMLElement
-    expect(editor.className).not.toMatch(/Fullscreen/)
+    // 全画面でないときは dialog ロールを持たない（§7.1: 全画面状態の契約は role="dialog"）。
+    expect(screen.queryByRole('dialog')).toBeNull()
 
-    // 全画面表示にするとクラスが付き、dialog ロールになる。
+    // 全画面表示にすると dialog ロールになる。
     await user.click(screen.getByRole('button', { name: '全画面表示' }))
-    expect(editor.className).toMatch(/Fullscreen/)
     expect(screen.getByRole('dialog')).toBe(editor)
 
     // 再トグルで外れる。
     await user.click(screen.getByRole('button', { name: '全画面を解除' }))
-    expect(editor.className).not.toMatch(/Fullscreen/)
+    expect(screen.queryByRole('dialog')).toBeNull()
 
     // もう一度全画面にして Esc で解除する。
     await user.click(screen.getByRole('button', { name: '全画面表示' }))
-    expect(editor.className).toMatch(/Fullscreen/)
+    expect(screen.getByRole('dialog')).toBe(editor)
     await user.keyboard('{Escape}')
-    await waitFor(() => expect(editor.className).not.toMatch(/Fullscreen/))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
   it('描画編集を閉じると全画面状態もリセットされる', async () => {
@@ -159,8 +159,8 @@ describe('PageEditPage', () => {
     // エディタが閉じ、再度開いても全画面状態は持ち越さない。
     expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
     await user.click(screen.getByRole('button', { name: '描画を追加' }))
-    const frame = await screen.findByTitle('drawio 描画エディタ')
-    expect((frame.parentElement as HTMLElement).className).not.toMatch(/Fullscreen/)
+    await screen.findByTitle('drawio 描画エディタ')
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('createPage が 409 を throw したとき日本語メッセージを表示し遷移しない', async () => {

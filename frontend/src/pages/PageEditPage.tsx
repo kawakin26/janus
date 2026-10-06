@@ -19,7 +19,6 @@ import { useStorage } from '../storage/StorageProvider'
 import AppLayout from '../components/AppLayout'
 import Breadcrumbs from '../components/Breadcrumbs'
 import { usePageError } from './use-page-error'
-import styles from './PageEditPage.module.css'
 import { ApiError } from '../storage/types'
 import { unified } from 'unified'
 import remarkParse from 'remark-parse'
@@ -72,6 +71,15 @@ function parseDrawioBlock(blockText: string): string {
 
 /** 同梱 webapp を embed モード（proto=json）で開く iframe の src（自オリジン・外部 CDN 不使用）。 */
 const DRAWIO_EMBED_SRC = '/drawio/webapp/index.html?embed=1&proto=json&spin=1&libraries=0&noExitBtn=0'
+
+// ネイティブ要素へ直接付ける Tailwind クラス（要素タグ不変の制約のため共通 UI コンポーネントは使わない）。
+// 体裁は Button/Alert の normal/error variant と同一ユーティリティに揃える（見た目を変えないため）。
+const BUTTON_NORMAL_CLASS =
+  'inline-flex items-center rounded px-3 py-1.5 ' +
+  'border border-border bg-surface-raised hover:bg-surface ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring ' +
+  'disabled:opacity-50 disabled:cursor-not-allowed'
+const ALERT_ERROR_CLASS = 'rounded px-3 py-2 bg-danger/10 text-danger'
 
 /** 新規マップブロック（マーカーなし・参照なし）の初期 MapData。 */
 function emptyMapData(): MapData {
@@ -320,13 +328,13 @@ function PageEditPage() {
       <Breadcrumbs path={path} />
       <h1>{isExisting ? 'ページ編集' : 'ページ新規作成'}</h1>
       <p>パス: {path}</p>
-      <form onSubmit={handleSubmit} noValidate className={styles.form}>
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
         {error !== null && (
-          <p role="alert" aria-live="assertive">
+          <p role="alert" aria-live="assertive" className={ALERT_ERROR_CLASS}>
             {error}
           </p>
         )}
-        <div className={styles.field}>
+        <div className="flex flex-col gap-1.5">
           <label htmlFor="title">タイトル</label>
           <input
             id="title"
@@ -334,9 +342,10 @@ function PageEditPage() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            className="w-full rounded border border-border bg-surface-raised px-3 py-1.5 text-fg focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring"
           />
         </div>
-        <div className={styles.field}>
+        <div className="flex flex-col gap-1.5">
           <label htmlFor="body">本文（Markdown）</label>
           <textarea
             id="body"
@@ -344,22 +353,28 @@ function PageEditPage() {
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={20}
+            className="w-full rounded border border-border bg-surface-raised px-3 py-1.5 font-mono text-fg focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring"
           />
         </div>
 
-        <section className={styles.field} aria-label="地図 GUI 編集">
+        <section className="flex flex-col gap-1.5" aria-label="地図 GUI 編集">
           {mapEditError !== null && (
-            <p role="alert" aria-live="assertive">
+            <p role="alert" aria-live="assertive" className={ALERT_ERROR_CLASS}>
               {mapEditError}
             </p>
           )}
           {mapEditing === null ? (
-            <div className={styles.actions}>
-              <button type="button" onClick={openNewMapBlock}>
+            <div className="flex items-center gap-4">
+              <button type="button" onClick={openNewMapBlock} className={BUTTON_NORMAL_CLASS}>
                 地図を追加
               </button>
               {Array.from({ length: customMapBlockCount }, (_, i) => (
-                <button key={i} type="button" onClick={() => openMapBlock(i)}>
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => openMapBlock(i)}
+                  className={BUTTON_NORMAL_CLASS}
+                >
                   地図 {i + 1} を編集
                 </button>
               ))}
@@ -370,11 +385,11 @@ function PageEditPage() {
                 mapData={mapEditing.data}
                 onChange={(next) => setMapEditing({ blockIndex: mapEditing.blockIndex, data: next })}
               />
-              <div className={styles.actions}>
-                <button type="button" onClick={applyMapEditing}>
+              <div className="flex items-center gap-4">
+                <button type="button" onClick={applyMapEditing} className={BUTTON_NORMAL_CLASS}>
                   地図を本文へ反映
                 </button>
-                <button type="button" onClick={cancelMapEditing}>
+                <button type="button" onClick={cancelMapEditing} className={BUTTON_NORMAL_CLASS}>
                   地図編集をやめる
                 </button>
               </div>
@@ -382,13 +397,18 @@ function PageEditPage() {
           )}
         </section>
 
-        <section className={styles.field} aria-label="drawio 描画 編集">
-          <div className={styles.actions}>
-            <button type="button" onClick={openNewDrawioBlock}>
+        <section className="flex flex-col gap-1.5" aria-label="drawio 描画 編集">
+          <div className="flex items-center gap-4">
+            <button type="button" onClick={openNewDrawioBlock} className={BUTTON_NORMAL_CLASS}>
               描画を追加
             </button>
             {Array.from({ length: drawioBlockCount }, (_, i) => (
-              <button key={i} type="button" onClick={() => openDrawioBlock(i)}>
+              <button
+                key={i}
+                type="button"
+                onClick={() => openDrawioBlock(i)}
+                className={BUTTON_NORMAL_CLASS}
+              >
                 描画 {i + 1} を編集
               </button>
             ))}
@@ -397,8 +417,8 @@ function PageEditPage() {
             <div
               className={
                 isDrawioFullscreen
-                  ? `${styles.drawioEditor} ${styles.drawioEditorFullscreen}`
-                  : styles.drawioEditor
+                  ? 'flex flex-col gap-2 fixed inset-0 z-50 p-2 bg-surface'
+                  : 'flex flex-col gap-2'
               }
               role={isDrawioFullscreen ? 'dialog' : undefined}
               aria-modal={isDrawioFullscreen ? true : undefined}
@@ -408,16 +428,21 @@ function PageEditPage() {
                 ref={drawioIframeRef}
                 src={DRAWIO_EMBED_SRC}
                 title="drawio 描画エディタ"
-                className={styles.drawioFrame}
+                className={
+                  isDrawioFullscreen
+                    ? 'w-full flex-1 min-h-0 border border-border'
+                    : 'w-full h-[70vh] min-h-[480px] border border-border'
+                }
               />
-              <div className={styles.actions}>
+              <div className="flex items-center gap-4">
                 <button
                   type="button"
                   onClick={() => setIsDrawioFullscreen((prev) => !prev)}
+                  className={BUTTON_NORMAL_CLASS}
                 >
                   {isDrawioFullscreen ? '全画面を解除' : '全画面表示'}
                 </button>
-                <button type="button" onClick={closeDrawioEditing}>
+                <button type="button" onClick={closeDrawioEditing} className={BUTTON_NORMAL_CLASS}>
                   描画編集を閉じる
                 </button>
               </div>
@@ -425,11 +450,11 @@ function PageEditPage() {
           )}
         </section>
 
-        <div className={styles.actions}>
-          <button type="submit" disabled={submitting}>
+        <div className="flex items-center gap-4">
+          <button type="submit" disabled={submitting} className={BUTTON_NORMAL_CLASS}>
             {submitting ? '保存中...' : '保存'}
           </button>
-          <Link to={cancelTo} className={styles.cancel}>
+          <Link to={cancelTo} className="text-fg-muted">
             キャンセル
           </Link>
         </div>
