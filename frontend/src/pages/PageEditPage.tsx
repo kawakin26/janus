@@ -74,11 +74,17 @@ const DRAWIO_EMBED_SRC = '/drawio/webapp/index.html?embed=1&proto=json&spin=1&li
 
 // ネイティブ要素へ直接付ける Tailwind クラス（要素タグ不変の制約のため共通 UI コンポーネントは使わない）。
 // 体裁は Button/Alert の normal/error variant と同一ユーティリティに揃える（見た目を変えないため）。
-const BUTTON_NORMAL_CLASS =
+// ネイティブ button へ付ける variant 別クラス（Button コンポーネントの VARIANTS と同一ユーティリティ）。
+// 操作の意味に応じて使い分ける: 新規作成/確定=accent、中立操作=normal、破壊的操作=danger。
+const BUTTON_BASE_CLASS =
   'inline-flex items-center rounded px-3 py-1.5 ' +
-  'border border-border bg-surface-raised hover:bg-surface ' +
   'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring ' +
   'disabled:opacity-50 disabled:cursor-not-allowed'
+const BUTTON_NORMAL_CLASS =
+  BUTTON_BASE_CLASS +
+  ' border border-border bg-control text-fg hover:bg-control-hover hover:border-fg-muted'
+const BUTTON_ACCENT_CLASS =
+  BUTTON_BASE_CLASS + ' bg-primary text-primary-contrast hover:bg-primary-hover'
 const ALERT_ERROR_CLASS = 'rounded px-3 py-2 bg-danger/10 text-danger'
 
 /** 新規マップブロック（マーカーなし・参照なし）の初期 MapData。 */
@@ -364,8 +370,10 @@ function PageEditPage() {
             </p>
           )}
           {mapEditing === null ? (
-            <div className="flex items-center gap-4">
-              <button type="button" onClick={openNewMapBlock} className={BUTTON_NORMAL_CLASS}>
+            <div className="flex items-center gap-2">
+              <span className="mr-1 text-sm font-semibold text-fg-muted">地図</span>
+              {/* 新規作成はアクセント（主要アクション）、既存の編集は中立の normal。 */}
+              <button type="button" onClick={openNewMapBlock} className={BUTTON_ACCENT_CLASS}>
                 地図を追加
               </button>
               {Array.from({ length: customMapBlockCount }, (_, i) => (
@@ -385,8 +393,9 @@ function PageEditPage() {
                 mapData={mapEditing.data}
                 onChange={(next) => setMapEditing({ blockIndex: mapEditing.blockIndex, data: next })}
               />
-              <div className="flex items-center gap-4">
-                <button type="button" onClick={applyMapEditing} className={BUTTON_NORMAL_CLASS}>
+              <div className="flex items-center gap-2">
+                {/* 本文へ反映は確定アクション=アクセント、やめる（取り消し）は中立=normal。 */}
+                <button type="button" onClick={applyMapEditing} className={BUTTON_ACCENT_CLASS}>
                   地図を本文へ反映
                 </button>
                 <button type="button" onClick={cancelMapEditing} className={BUTTON_NORMAL_CLASS}>
@@ -398,8 +407,10 @@ function PageEditPage() {
         </section>
 
         <section className="flex flex-col gap-1.5" aria-label="drawio 描画 編集">
-          <div className="flex items-center gap-4">
-            <button type="button" onClick={openNewDrawioBlock} className={BUTTON_NORMAL_CLASS}>
+          <div className="flex items-center gap-2">
+            <span className="mr-1 text-sm font-semibold text-fg-muted">描画</span>
+            {/* 新規作成はアクセント（主要アクション）、既存の編集は中立の normal。 */}
+            <button type="button" onClick={openNewDrawioBlock} className={BUTTON_ACCENT_CLASS}>
               描画を追加
             </button>
             {Array.from({ length: drawioBlockCount }, (_, i) => (
@@ -451,7 +462,7 @@ function PageEditPage() {
         </section>
 
         <div className="flex items-center gap-4">
-          <button type="submit" disabled={submitting} className={BUTTON_NORMAL_CLASS}>
+          <button type="submit" disabled={submitting} className={BUTTON_ACCENT_CLASS}>
             {submitting ? '保存中...' : '保存'}
           </button>
           <Link to={cancelTo} className="text-fg-muted">

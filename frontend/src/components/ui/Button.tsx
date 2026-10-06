@@ -23,11 +23,16 @@ const BASE =
   'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring ' +
   'disabled:opacity-50 disabled:cursor-not-allowed'
 
-// variant 別の体裁（§5.2 の体裁基準の表に厳密準拠）。
+// variant 別の体裁（§5.2 の体裁基準 + 視認性/ホバー強調の改善）。
+// normal は地色トークン control で面として見せ、hover で control-hover に変化させて
+// 複数ボタンが並ぶ場面でも輪郭と押下対象が明確になるようにする。
+// accent は hover で primary-hover（別トークン）へ、danger は hover で塗りに切り替えて強調する。
 const VARIANTS: Record<ButtonVariant, string> = {
-  normal: 'border border-border bg-surface-raised hover:bg-surface',
-  accent: 'bg-primary text-primary-contrast hover:opacity-90',
-  danger: 'border border-danger text-danger hover:bg-danger/10',
+  normal:
+    'border border-border bg-control text-fg hover:bg-control-hover hover:border-fg-muted',
+  accent: 'bg-primary text-primary-contrast hover:bg-primary-hover',
+  danger:
+    'border border-danger text-danger hover:bg-danger hover:text-primary-contrast',
 }
 
 export function Button({ variant = 'normal', className, type, ...rest }: ButtonProps) {

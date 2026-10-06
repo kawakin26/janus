@@ -15,10 +15,10 @@ describe('Button', () => {
     expect(btn).toHaveAttribute('type', 'button')
   })
 
-  it('variant="normal"（既定）は border/surface のクラスが付く', () => {
+  it('variant="normal"（既定）は border/control 地色のクラスが付く', () => {
     render(<Button>通常</Button>)
     const btn = screen.getByRole('button', { name: '通常' })
-    expect(btn).toHaveClass('border', 'border-border', 'bg-surface-raised')
+    expect(btn).toHaveClass('border', 'border-border', 'bg-control')
   })
 
   it('variant="accent" は bg-primary / text-primary-contrast のクラスが付く', () => {

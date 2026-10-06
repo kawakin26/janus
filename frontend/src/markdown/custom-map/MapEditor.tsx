@@ -27,6 +27,13 @@ const PHOTO_INPUT_CLASS =
   'file:bg-surface-raised file:px-3 file:py-1.5 file:text-fg file:cursor-pointer ' +
   'hover:file:bg-surface file:mr-3'
 
+// 破壊的操作（マーカー削除）用のボタン体裁。危険色で削除であることを明示する
+// （Button コンポーネントの danger variant と同一ユーティリティ）。
+const DANGER_BUTTON_CLASS =
+  'inline-flex items-center rounded border border-danger px-3 py-1.5 text-danger ' +
+  'hover:bg-danger hover:text-primary-contrast ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring'
+
 export interface MapEditorProps {
   mapData: MapData
   onChange: (next: MapData) => void
@@ -408,7 +415,11 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
             </div>
 
             <div>
-              <button type="button" onClick={() => removeMarker(i)}>
+              <button
+                type="button"
+                onClick={() => removeMarker(i)}
+                className={DANGER_BUTTON_CLASS}
+              >
                 マーカーを削除
               </button>
             </div>

@@ -24,10 +24,16 @@
   --color-border: oklch(0.9 0.004 260); /* 繊細な境界線 */
   --color-primary: oklch(0.55 0.17 255); /* アクセント/リンク／編集=青 */
   --color-primary-contrast: oklch(0.99 0 0); /* primary 上の前景 */
+  --color-primary-hover: oklch(0.48 0.18 255); /* primary ホバー（やや暗く・accent ボタン用） */
   --color-success: oklch(0.6 0.14 150); /* 成功 */
   --color-warning: oklch(0.72 0.15 80); /* 警告 */
   --color-danger: oklch(0.55 0.19 25); /* 削除/エラー=赤 */
   --color-ring: oklch(0.55 0.17 255); /* フォーカスリング（= primary） */
+
+  /* ボタン（normal variant）用の面トークン。地色(surface)と明確な明度差を付け、
+     複数ボタンが並ぶ場面でもボタンの輪郭が面として認識できるようにする（§5.2 の体裁強化）。 */
+  --color-control: oklch(0.95 0.004 260); /* normal ボタン地色（ライト・surface 0.99 と差を付ける） */
+  --color-control-hover: oklch(0.9 0.006 260); /* normal ボタンのホバー地色 */
 
   /* タイポグラフィ（設計 §2.2） */
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
@@ -65,10 +71,13 @@
     --color-border: oklch(0.42 0.012 260); /* 背景(0.17)/raised(0.21)と十分な明度差を取り罫線を視認可能に */
     --color-primary: oklch(0.72 0.14 255);
     --color-primary-contrast: oklch(0.17 0.01 260);
+    --color-primary-hover: oklch(0.8 0.13 255); /* primary ホバー（ダークは明るく） */
     --color-success: oklch(0.72 0.15 150);
     --color-warning: oklch(0.8 0.15 80);
     --color-danger: oklch(0.68 0.19 25);
     --color-ring: oklch(0.72 0.14 255);
+    --color-control: oklch(0.27 0.014 260); /* normal ボタン地色（ダーク・surface 0.17/raised 0.21 と差を付ける） */
+    --color-control-hover: oklch(0.33 0.016 260); /* normal ボタンのホバー地色 */
   }
 
   /* トークン駆動の最小グローバル。Preflight を土台にトークンで地色/前景/フォント/行間を与える。
@@ -110,21 +119,32 @@
     padding: 0.4rem 0.5rem;
   }
 
-  /* 素の <button>（CSS Module 等で装飾されていないもの）に最小の体裁を与える。
-     装飾済みボタンは各要素のクラスが詳細度/レイヤ順でこれを上書きする。 */
+  /* 素の <button>（Tailwind クラスで装飾されていないもの）に体裁を与える。
+     地色トークン control で面として見せ、hover で control-hover に変化させて押下対象を明確化。
+     クラス指定済みボタン（Button コンポーネント等）は詳細度/レイヤ順でこれを上書きする。 */
   button {
     font: inherit;
     cursor: pointer;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     padding: 0.4rem 0.75rem;
-    background-color: var(--color-surface-raised);
+    background-color: var(--color-control);
     color: var(--color-fg);
+  }
+
+  button:hover {
+    background-color: var(--color-control-hover);
+    border-color: var(--color-fg-muted);
   }
 
   button:disabled {
     cursor: not-allowed;
     opacity: 0.5;
+  }
+
+  button:disabled:hover {
+    background-color: var(--color-control);
+    border-color: var(--color-border);
   }
 
   /* フォーカス可視（キーボード操作時のみ・設計 §8・DS-8-3）。 */
