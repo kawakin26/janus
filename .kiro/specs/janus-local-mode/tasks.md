@@ -187,9 +187,11 @@
 
 ## 全体検証と実機目視
 
-- [ ] 18. 全体回帰・ビルド・lint と実機目視
+- [x] 18. 全体回帰・ビルド・lint と実機目視
   - **frontend**（`frontend/` から実行）: `npx tsc --noEmit`（`LocalClient implements StorageClient` の型適合含む）→ `npm run test:run`（新規テスト群 + 既存 311 件回帰ゼロ）→ `npm run build`（PWA 成果物・`manifest.webmanifest`・SW・draw.io precache 含む）→ `npm run lint`（0 errors）。
   - **backend**（`backend/` から実行・変更なし確認）: `../.venv/bin/python manage.py check` → `../.venv/bin/python manage.py makemigrations --check --dry-run`（差分なし）→ `../.venv/bin/python manage.py test api`（172 passed・回帰ゼロ）。
   - **実機目視（ユーザー確認・コミット前）**: Firefox / Chrome 最新で、(1) 初回アクセスで `ModeGate` 表示→ローカル選択→`localStorage` 記録→本体起動・再訪で直接起動、(2) ローカルモードでページ CRUD・リロード後データ保持、(3) サイドバーツリー表示、(4) リビジョン履歴・差分・復元、(5) コメント投稿/編集/削除、(6) アセットアップロード/一覧/参照・フォルダ作成/移動、(7) モバイルで MapEditor カメラ撮影（`capture`）、(8) エクスポート ZIP ダウンロード→インポート復元（確認ダイアログ）、(9) PWA インストール・オフライン起動・draw.io オフライン動作、(10) サーバーモード選択で `RestClient` 従来動作・既存全機能回帰なし、(11) `AuthProvider`/`RequireAuth` がコード変更なしでバイパス動作。
   - 検証: 上記 frontend/backend コマンドが全成功し、既存フェーズ 1/2/3a・デザインシステム・サイドバーツリーのテスト差分がゼロであること。実機目視項目をユーザーが確認してからコミットする。
+  - **完了記録（2026-10-08）**: 全実機目視項目をユーザーが確認済み。最後まで残っていた「PWA オフライン起動」も達成（preview 停止後も Chrome リロード／インストール済み PWA から起動成功）。
+  - **判明した運用上の制約（重要）**: PWA 成果物（`dist/sw.js`）の生成は **Node 20（LTS）でビルドすること**。Android/Termux の **Node 26 では `vite-plugin-pwa@2.0.0`（内部 `workbox-build@7.4.1`）が `pathToFileURL('.')` 相当で例外を投げ、エラーを出さずに PWA 生成フェーズをスキップするため `sw.js` が生成されない**（`vite build` 自体は成功し `✓ built` と出るが、末尾の `PWA v2.0.0 ... files generated dist/sw.js` が出ない）。その dist を配信すると `/sw.js` が SPA フォールバックで `index.html`（`text/html`）を返し、Chrome が `The script has an unsupported MIME type ('text/html')` で SW 登録に失敗する。回避策は「Node 20 でビルドした `dist/` を実機へ配って配信する（実機ではビルドしない）」。コミット `09aad8e`（SW 登録失敗時にエラー実体を画面表示）がこの切り分けを可能にした。
   - _要件: 非機能 1, 非機能 2, 非機能 4, 統合受入 1〜14_
