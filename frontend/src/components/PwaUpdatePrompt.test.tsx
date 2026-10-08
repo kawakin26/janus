@@ -106,9 +106,26 @@ describe('PwaUpdatePrompt', () => {
 
     act(() => options.onRegisterError(error))
 
-    expect(screen.getByRole('alert')).toHaveTextContent('オフライン起動の準備に失敗しました')
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('オフライン起動の準備に失敗しました')
+    // 原因切り分け用に、エラーの実メッセージ（name: message）を画面へ出す。
+    expect(alert).toHaveTextContent('Error: registration failed')
     expect(consoleError).toHaveBeenCalledWith('Service Worker の登録に失敗しました', error)
     consoleError.mockRestore()
+  })
+
+  it('登録エラーを「閉じる」で消せる', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<PwaUpdatePrompt />)
+    const options = registerOptions.mock.calls[0][0] as {
+      onRegisterError: (error: unknown) => void
+    }
+
+    act(() => options.onRegisterError(new Error('boom')))
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+
+    act(() => screen.getByRole('button', { name: '閉じる' }).click())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('offlineReady=true のとき成功通知を表示する', () => {

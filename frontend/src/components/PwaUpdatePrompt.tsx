@@ -11,8 +11,22 @@ import { useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { Button } from './ui/Button'
 
+// 登録失敗時に原因を実機の画面だけで切り分けられるよう、エラーの実メッセージを文字列化する。
+// chrome://inspect で PC 接続しなくても SecurityError / fetch 失敗などの種別が読める。
+function formatRegisterError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.name ? `${error.name}: ${error.message}` : error.message
+  }
+  if (typeof error === 'string') return error
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
+  }
+}
+
 export function PwaUpdatePrompt() {
-  const [registrationError, setRegistrationError] = useState(false)
+  const [registrationError, setRegistrationError] = useState<string | null>(null)
   const [offlineReadyNotice, setOfflineReadyNotice] = useState(false)
   const {
     needRefresh: [needRefresh, setNeedRefresh],
@@ -21,10 +35,10 @@ export function PwaUpdatePrompt() {
   } = useRegisterSW({
     immediate: true,
     onOfflineReady: () => setOfflineReadyNotice(true),
-    onRegistered: () => setRegistrationError(false),
+    onRegistered: () => setRegistrationError(null),
     onRegisterError: (error) => {
       console.error('Service Worker の登録に失敗しました', error)
-      setRegistrationError(true)
+      setRegistrationError(formatRegisterError(error))
     },
   })
 
@@ -33,11 +47,20 @@ export function PwaUpdatePrompt() {
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 rounded border border-border bg-surface-raised p-4 shadow"
+      className="fixed bottom-4 right-4 z-50 max-w-sm rounded border border-border bg-surface-raised p-4 shadow"
       role={registrationError ? 'alert' : undefined}
     >
       {registrationError && (
-        <p className="text-fg text-sm">オフライン起動の準備に失敗しました</p>
+        <div>
+          <p className="text-fg text-sm">オフライン起動の準備に失敗しました</p>
+          {/* 原因切り分け用に実エラーを表示（SecurityError・fetch 失敗など）。 */}
+          <p className="text-fg-muted mt-1 break-words text-xs">{registrationError}</p>
+          <div className="mt-3 flex justify-end">
+            <Button variant="normal" onClick={() => setRegistrationError(null)}>
+              閉じる
+            </Button>
+          </div>
+        </div>
       )}
       {showOfflineReady && (
         <div>
