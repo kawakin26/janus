@@ -3,7 +3,7 @@
 // 送信で login が呼ばれる / 失敗で日本語エラー表示 / 成功で from or / へ遷移 /
 // ログイン済みで /login 来訪時は / へ、を検証する。
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
@@ -13,8 +13,24 @@ import LoginPage from './LoginPage'
 import { ApiError } from '../storage/types'
 import { createStubStorage, sampleUser } from '../test/stub-storage'
 import type { StorageClient } from '../storage/types'
+import { MODE_KEY } from '../storage/mode'
+
+const originalLocation = window.location
+
+beforeEach(() => {
+  localStorage.clear()
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: { ...originalLocation, reload: vi.fn() },
+  })
+})
 
 afterEach(() => {
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: originalLocation,
+  })
+  localStorage.clear()
   vi.restoreAllMocks()
 })
 
@@ -53,6 +69,23 @@ async function waitForLoginForm() {
 }
 
 describe('LoginPage', () => {
+  it('ローカルモードへ戻ると local を保存して reload する', async () => {
+    const login = vi.fn(async () => ({ token: 'tok', user: sampleUser }))
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => null),
+      login,
+    })
+    renderLogin(client, ['/login'])
+    await waitForLoginForm()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'ローカルモードへ戻る' }))
+
+    expect(localStorage.getItem(MODE_KEY)).toBe('local')
+    expect(window.location.reload).toHaveBeenCalledTimes(1)
+    expect(login).not.toHaveBeenCalled()
+  })
+
   it('送信で login が呼ばれ、成功時に / へ遷移する', async () => {
     const login = vi.fn(async () => ({ token: 'tok', user: sampleUser }))
     const client = createStubStorage({

@@ -12,6 +12,8 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { Button } from '../components/ui/Button'
+import { writeMode } from '../storage/mode'
 import { ApiError } from '../storage/types'
 
 /** location.state.from として積まれる遷移元の最小形。 */
@@ -36,6 +38,11 @@ function LoginPage() {
   // 既にログイン済みで /login に来た場合は保護ルートへ戻す。
   if (user !== null) {
     return <Navigate to={redirectTo} replace />
+  }
+
+  const handleReturnToLocalMode = () => {
+    writeMode('local')
+    window.location.reload()
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -94,6 +101,9 @@ function LoginPage() {
           {submitting ? 'ログイン中...' : 'ログイン'}
         </button>
       </form>
+      <Button type="button" onClick={handleReturnToLocalMode}>
+        ローカルモードへ戻る
+      </Button>
     </main>
   )
 }
