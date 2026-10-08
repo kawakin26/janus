@@ -9,7 +9,6 @@ import NotFoundPage from './pages/NotFoundPage'
 import AssetLibraryPage from './pages/AssetLibraryPage'
 import SettingsPage from './pages/SettingsPage'
 import { RequireAuth } from './auth/RequireAuth'
-import PwaUpdatePrompt from './components/PwaUpdatePrompt'
 
 // ルート骨組み（要件 2-6）。
 // 保護ルート（/ , /view/* , /edit/* , /history/* , /permissions/* , /assets）は
@@ -79,8 +78,6 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
-      {/* ルーティングに依存しない常設 UI。更新プロンプト（design §7.6）。 */}
-      <PwaUpdatePrompt />
     </>
   )
 }

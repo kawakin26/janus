@@ -7,6 +7,7 @@ import { LocalClient } from './storage/local-client'
 import { AuthProvider } from './auth/AuthContext'
 import { ThemeProvider } from './theme/ThemeProvider'
 import { ModeGate } from './components/ModeGate'
+import PwaUpdatePrompt from './components/PwaUpdatePrompt'
 import { readMode } from './storage/mode'
 import type { Mode } from './storage/mode'
 import type { StorageClient } from './storage/types'
@@ -27,16 +28,22 @@ function createClientForMode(mode: Mode): StorageClient {
 // StorageProvider に注入してアプリを描画する。AuthProvider/App 以降は従来どおり。
 export function Root() {
   const mode = readMode()
-  if (mode === null) {
-    return <ModeGate />
-  }
-  const client = createClientForMode(mode)
-  return (
-    <StorageProvider client={client}>
+  const app = mode === null ? (
+    <ModeGate />
+  ) : (
+    <StorageProvider client={createClientForMode(mode)}>
       <AuthProvider>
         <App />
       </AuthProvider>
     </StorageProvider>
+  )
+
+  return (
+    <>
+      {/* モード選択前から登録を始め、初回選択後の reload 前に app shell を準備する。 */}
+      <PwaUpdatePrompt />
+      {app}
+    </>
   )
 }
 

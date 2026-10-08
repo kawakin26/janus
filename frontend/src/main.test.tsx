@@ -20,6 +20,10 @@ vi.mock('./storage/local-client', () => ({
   LocalClient: class {},
 }))
 
+vi.mock('./components/PwaUpdatePrompt', () => ({
+  default: () => null,
+}))
+
 import { Root } from './main'
 import { readMode } from './storage/mode'
 
