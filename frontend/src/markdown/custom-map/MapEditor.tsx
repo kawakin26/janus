@@ -5,12 +5,13 @@
 // - マップ画像は AssetClient の listFolders/listAssets/resolveAssetUrl で選択・プレビューする。
 // - 画像上クリックでマーカー配置、ドラッグで移動、削除ボタンで削除。各マーカーの
 //   label/color/desc/x/y を編集する。座標系・クランプ・色は既存 map-utils.ts を流用する。
-// - 参考写真は <input type="file">（capture なし＝撮影 UI は 3b）でファイル選択し、既存
-//   AssetClient.uploadAsset で登録して写真子リスト（AssetRef）に紐付ける。
+// - 参考写真は撮影またはファイル選択から既存 AssetClient.uploadAsset で登録し、
+//   写真子リスト（AssetRef）に紐付ける。
 // - StorageClient/AssetClient に新規メソッドは足さない。既存 CustomMapViewer/parse-map.ts は不変。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
+import { Button } from '../../components/ui/Button'
 import { useStorage } from '../../storage/StorageProvider'
 import { usePageError } from '../../pages/use-page-error'
 import { readMode } from '../../storage/mode'
@@ -20,13 +21,6 @@ import { clamp } from './map-utils'
 
 // field（ラベル付き入力の縦積み）。ラベルは可読性のため text-fg（薄い muted ではなく本文色）。
 const FIELD_CLASS = 'grid gap-1 [&>label]:text-sm [&>label]:text-fg'
-
-// 参考写真の file input。ネイティブのファイル選択ボタン（::file-selector-button）に
-// 枠線+背景+余白のボタン体裁を与え、素のテキストと区別できるようにする。
-const PHOTO_INPUT_CLASS =
-  'file:inline-flex file:items-center file:rounded file:border file:border-border ' +
-  'file:bg-surface-raised file:px-3 file:py-1.5 file:text-fg file:cursor-pointer ' +
-  'hover:file:bg-surface file:mr-3'
 
 // 破壊的操作（マーカー削除）用のボタン体裁。危険色で削除であることを明示する
 // （Button コンポーネントの danger variant と同一ユーティリティ）。
@@ -71,6 +65,8 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
 
   const previewRef = useRef<HTMLDivElement>(null)
   const dragging = useRef<number | null>(null)
+  const cameraInputRefs = useRef<(HTMLInputElement | null)[]>([])
+  const fileInputRefs = useRef<(HTMLInputElement | null)[]>([])
 
   // マップ参照の代表指定子（表示用）。
   const mapSpecifier = mapData.assetRef.specifiers[0] ?? null
@@ -406,19 +402,50 @@ function MapEditor({ mapData, onChange }: MapEditorProps) {
             )}
 
             <div className={FIELD_CLASS}>
-              <label htmlFor={`marker-${i}-photo`}>参考写真を追加</label>
-              <input
-                id={`marker-${i}-photo`}
-                className={PHOTO_INPUT_CLASS}
-                type="file"
-                accept="image/*"
-                capture={isLocalMode ? 'environment' : undefined}
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) void attachPhoto(i, file)
-                  e.target.value = ''
-                }}
-              />
+              <span className="text-sm text-fg">参考写真を追加</span>
+              <div className="flex flex-wrap gap-2">
+                <label className="sr-only" htmlFor={`marker-${i}-photo-camera`}>
+                  カメラで撮影
+                </label>
+                <input
+                  id={`marker-${i}-photo-camera`}
+                  ref={(element) => {
+                    cameraInputRefs.current[i] = element
+                  }}
+                  className="sr-only"
+                  type="file"
+                  accept="image/*"
+                  capture={isLocalMode ? 'environment' : undefined}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void attachPhoto(i, file)
+                    e.target.value = ''
+                  }}
+                />
+                <Button type="button" onClick={() => cameraInputRefs.current[i]?.click()}>
+                  カメラで撮影
+                </Button>
+                <label className="sr-only" htmlFor={`marker-${i}-photo-file`}>
+                  ファイルを選択
+                </label>
+                <input
+                  id={`marker-${i}-photo-file`}
+                  ref={(element) => {
+                    fileInputRefs.current[i] = element
+                  }}
+                  className="sr-only"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void attachPhoto(i, file)
+                    e.target.value = ''
+                  }}
+                />
+                <Button type="button" onClick={() => fileInputRefs.current[i]?.click()}>
+                  ファイルを選択
+                </Button>
+              </div>
             </div>
 
             <div>

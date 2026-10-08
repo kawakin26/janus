@@ -134,23 +134,66 @@ describe('MapEditor', () => {
     expect(next.markers[0].label).toBe('入')
   })
 
-  it('写真選択で uploadAsset が呼ばれ写真子リストへ紐付く', async () => {
+  it('ファイル選択で uploadAsset が呼ばれ写真子リストへ紐付く', async () => {
     const mapData = baseMapData({
       markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
     })
     const uploadAsset = vi.fn(async () => photoAsset)
     const { onChange } = renderEditor(mapData, { uploadAsset })
 
-    const fileInput = await screen.findByLabelText('参考写真を追加')
+    expect(screen.getByRole('button', { name: 'カメラで撮影' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ファイルを選択' })).toBeInTheDocument()
+    const fileInput = await screen.findByLabelText('ファイルを選択')
     const file = new File(['img'], 'entrance.jpg', { type: 'image/jpeg' })
     await userEvent.upload(fileInput, file)
 
     await waitFor(() => expect(uploadAsset).toHaveBeenCalledWith({ folderId: null, file }))
     await waitFor(() => expect(onChange).toHaveBeenCalled())
+    expect(fileInput).toHaveValue('')
     const next = lastMapData(onChange)
     expect(next.markers[0].photos).toEqual([
       { assetRef: { specifiers: [{ kind: 'filename', value: 'entrance.jpg' }] }, desc: '' },
     ])
+  })
+
+  it('カメラ撮影で uploadAsset が呼ばれ写真子リストへ紐付く', async () => {
+    const mapData = baseMapData({
+      markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
+    })
+    const uploadAsset = vi.fn(async () => photoAsset)
+    const { onChange } = renderEditor(mapData, { uploadAsset })
+
+    const cameraInput = await screen.findByLabelText('カメラで撮影')
+    const file = new File(['img'], 'camera.jpg', { type: 'image/jpeg' })
+    await userEvent.upload(cameraInput, file)
+
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledWith({ folderId: null, file }))
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
+    expect(cameraInput).toHaveValue('')
+    const next = lastMapData(onChange)
+    expect(next.markers[0].photos).toEqual([
+      { assetRef: { specifiers: [{ kind: 'filename', value: 'entrance.jpg' }] }, desc: '' },
+    ])
+  })
+
+  it('カメラとファイル選択のボタンが対応する input を起動する', async () => {
+    const mapData = baseMapData({
+      markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
+    })
+    renderEditor(mapData)
+
+    const cameraInput = await screen.findByLabelText('カメラで撮影')
+    const fileInput = await screen.findByLabelText('ファイルを選択')
+    const cameraClick = vi.spyOn(cameraInput, 'click')
+    const fileClick = vi.spyOn(fileInput, 'click')
+
+    await userEvent.click(screen.getByRole('button', { name: 'カメラで撮影' }))
+    expect(cameraClick).toHaveBeenCalledTimes(1)
+    expect(fileClick).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'ファイルを選択' }))
+    expect(fileClick).toHaveBeenCalledTimes(1)
+    expect(cameraClick).toHaveBeenCalledTimes(1)
   })
 
   it('マップ未選択ではプレースホルダを表示する', async () => {
@@ -162,36 +205,44 @@ describe('MapEditor', () => {
     ).toBeInTheDocument()
   })
 
-  it('ローカルモードでは写真 input が capture="environment" を持つ', async () => {
+  it('ローカルモードではカメラ input だけが capture="environment" を持つ', async () => {
     readModeMock.mockReturnValue('local')
     const mapData = baseMapData({
       markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
     })
     renderEditor(mapData)
 
-    const fileInput = await screen.findByLabelText('参考写真を追加')
-    expect(fileInput.getAttribute('capture')).toBe('environment')
+    expect(screen.getByRole('button', { name: 'カメラで撮影' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ファイルを選択' })).toBeInTheDocument()
+    const cameraInput = await screen.findByLabelText('カメラで撮影')
+    const fileInput = await screen.findByLabelText('ファイルを選択')
+    expect(cameraInput.getAttribute('capture')).toBe('environment')
+    expect(fileInput.getAttribute('capture')).toBeNull()
   })
 
-  it('サーバーモードでは写真 input に capture 属性を持たない', async () => {
+  it('サーバーモードではカメラとファイルの input に capture 属性を持たない', async () => {
     readModeMock.mockReturnValue('server')
     const mapData = baseMapData({
       markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
     })
     renderEditor(mapData)
 
-    const fileInput = await screen.findByLabelText('参考写真を追加')
+    const cameraInput = await screen.findByLabelText('カメラで撮影')
+    const fileInput = await screen.findByLabelText('ファイルを選択')
+    expect(cameraInput.getAttribute('capture')).toBeNull()
     expect(fileInput.getAttribute('capture')).toBeNull()
   })
 
-  it('モード未設定（null）では写真 input に capture 属性を持たない', async () => {
+  it('モード未設定（null）ではカメラとファイルの input に capture 属性を持たない', async () => {
     readModeMock.mockReturnValue(null)
     const mapData = baseMapData({
       markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
     })
     renderEditor(mapData)
 
-    const fileInput = await screen.findByLabelText('参考写真を追加')
+    const cameraInput = await screen.findByLabelText('カメラで撮影')
+    const fileInput = await screen.findByLabelText('ファイルを選択')
+    expect(cameraInput.getAttribute('capture')).toBeNull()
     expect(fileInput.getAttribute('capture')).toBeNull()
   })
 })
