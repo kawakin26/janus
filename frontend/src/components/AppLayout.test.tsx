@@ -132,6 +132,29 @@ describe('AppLayout（非破壊の既存挙動）', () => {
     expect(screen.queryByRole('button', { name: 'ログアウト' })).toBeNull()
   })
 
+  it('サーバーモード（janus-mode=server）ではログアウトボタンを表示する', async () => {
+    window.localStorage.setItem('janus-mode', 'server')
+    const client = loggedInStub()
+    renderLayout(client)
+
+    const header = await screen.findByRole('banner')
+    expect(within(header).getByRole('button', { name: 'ログアウト' })).toBeInTheDocument()
+    // モード切替ボタンは両モードで表示される。
+    expect(within(header).getByRole('button', { name: 'モード切替' })).toBeInTheDocument()
+  })
+
+  it('ローカルモード（janus-mode=local）ではログアウトボタンを表示しない', async () => {
+    window.localStorage.setItem('janus-mode', 'local')
+    const client = loggedInStub()
+    renderLayout(client)
+
+    const header = await screen.findByRole('banner')
+    // 固定ユーザーのためログアウトは無意味 → 非表示。
+    expect(within(header).queryByRole('button', { name: 'ログアウト' })).toBeNull()
+    // モード切替で抜けられるので、そちらは残す。
+    expect(within(header).getByRole('button', { name: 'モード切替' })).toBeInTheDocument()
+  })
+
   it('ログアウト押下で logout() が呼ばれ /login へ遷移する', async () => {
     const logout = vi.fn(async () => {})
     const client = loggedInStub({ logout })

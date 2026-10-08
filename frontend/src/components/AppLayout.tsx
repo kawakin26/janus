@@ -16,7 +16,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { ThemeToggle } from '../theme/ThemeToggle'
-import { clearMode } from '../storage/mode'
+import { clearMode, readMode } from '../storage/mode'
 import PageTree from './sidebar/PageTree'
 
 export interface AppLayoutProps {
@@ -81,6 +81,11 @@ function AppLayout({ children }: AppLayoutProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { pathname } = useLocation()
+
+  // ローカルモードは固定ユーザーで動くためログアウトの概念がない（§2.5）。
+  // ローカルモードから抜けるのは「モード切替」の役割なので、ログアウトボタンは
+  // サーバーモードのときだけ表示する（readMode() をレンダー時に 1 回直読み）。
+  const isLocalMode = readMode() === 'local'
 
   // 狭幅オーバーレイの開閉状態と、フォーカス管理用の参照。
   const [menuOpen, setMenuOpen] = useState(false)
@@ -187,13 +192,16 @@ function AppLayout({ children }: AppLayoutProps) {
             >
               モード切替
             </button>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded border border-border bg-surface-raised px-3 py-1.5 text-sm text-fg hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring"
-            >
-              ログアウト
-            </button>
+            {/* ログアウトはサーバーモードのみ。ローカルモードは固定ユーザーのため非表示。 */}
+            {!isLocalMode && (
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded border border-border bg-surface-raised px-3 py-1.5 text-sm text-fg hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring"
+              >
+                ログアウト
+              </button>
+            )}
           </div>
         </header>
 
