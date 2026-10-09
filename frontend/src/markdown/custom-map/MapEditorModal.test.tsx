@@ -145,6 +145,8 @@ describe('MapEditorModal', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    // mediaDevices スタブを剥がし、既定（jsdom では未定義）へ戻す。
+    delete (navigator as unknown as { mediaDevices?: unknown }).mediaDevices
   })
 
   it('マウント時に resolveLongPressMs が呼ばれる', async () => {
@@ -452,6 +454,78 @@ describe('MapEditorModal', () => {
     const fileInput = await screen.findByLabelText('ファイルを選択')
     expect(cameraInput.getAttribute('capture')).toBeNull()
     expect(fileInput.getAttribute('capture')).toBeNull()
+  })
+
+  // navigator.mediaDevices.enumerateDevices をモックして hasCamera 判定を制御する。
+  // 既存の capture テスト等が依存しないよう、各テストでスタブを設定し afterEach で原状復帰する。
+  function stubMediaDevices(value: unknown): void {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      get: () => value,
+    })
+  }
+
+  it('videoinput がある場合は「カメラで撮影」ボタンを表示する', async () => {
+    stubMediaDevices({
+      enumerateDevices: vi.fn(async () => [{ kind: 'videoinput' }, { kind: 'audioinput' }]),
+    })
+    const mapData = baseMapData({
+      markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
+    })
+    renderModal(mapData)
+    await setupViewport()
+    fireEvent.click(screen.getByRole('button', { name: '#1 入口' }))
+
+    expect(await screen.findByRole('button', { name: 'カメラで撮影' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ファイルを選択' })).toBeInTheDocument()
+  })
+
+  it('videoinput が無い場合は「カメラで撮影」ボタンを表示せず、ファイル選択は残る', async () => {
+    stubMediaDevices({
+      enumerateDevices: vi.fn(async () => [{ kind: 'audioinput' }, { kind: 'audiooutput' }]),
+    })
+    const mapData = baseMapData({
+      markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
+    })
+    renderModal(mapData)
+    await setupViewport()
+    fireEvent.click(screen.getByRole('button', { name: '#1 入口' }))
+
+    // 判定確定を待つ（ファイル選択は常に出る）。
+    expect(await screen.findByRole('button', { name: 'ファイルを選択' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'カメラで撮影' })).not.toBeInTheDocument(),
+    )
+  })
+
+  it('enumerateDevices が reject しても安全側で「カメラで撮影」を表示する', async () => {
+    stubMediaDevices({
+      enumerateDevices: vi.fn(async () => {
+        throw new Error('denied')
+      }),
+    })
+    const mapData = baseMapData({
+      markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
+    })
+    renderModal(mapData)
+    await setupViewport()
+    fireEvent.click(screen.getByRole('button', { name: '#1 入口' }))
+
+    expect(await screen.findByRole('button', { name: 'カメラで撮影' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ファイルを選択' })).toBeInTheDocument()
+  })
+
+  it('navigator.mediaDevices が無い場合は安全側で「カメラで撮影」を表示する', async () => {
+    stubMediaDevices(undefined)
+    const mapData = baseMapData({
+      markers: [{ x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] }],
+    })
+    renderModal(mapData)
+    await setupViewport()
+    fireEvent.click(screen.getByRole('button', { name: '#1 入口' }))
+
+    expect(await screen.findByRole('button', { name: 'カメラで撮影' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'ファイルを選択' })).toBeInTheDocument()
   })
 
   it('マップ未選択ではプレースホルダを表示する', async () => {

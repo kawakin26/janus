@@ -97,6 +97,10 @@ function MapEditorModal({ mapData, onSave, onDiscard }: MapEditorModalProps) {
   // ローカルモードのときだけカメラ撮影 UI を促す（capture="environment"）。
   const isLocalMode = readMode() === 'local'
 
+  // カメラ（videoinput）の有無。カメラが無いと確実に分かったときだけ「カメラで撮影」を隠す。
+  // 未確定・判定不能（未対応ブラウザ / 非セキュアコンテキスト / 例外）は安全側で true に倒す。
+  const [hasCamera, setHasCamera] = useState(true)
+
   // 作業用コピー（draft）。保存時のみ onSave(draft) で親へ反映する。
   const [draft, setDraft] = useState<MapData>(() => deepCloneMapData(mapData))
   const [selected, setSelected] = useState<number | null>(null)
@@ -165,6 +169,26 @@ function MapEditorModal({ mapData, onSave, onDiscard }: MapEditorModalProps) {
   useEffect(() => {
     refitView()
   }, [refitView])
+
+  // マウント時に 1 回だけカメラ（videoinput）の有無を判定する。
+  // enumerateDevices で videoinput の件数のみを見る（権限要求 getUserMedia は呼ばない）。
+  // 権限未許可だとラベルは空になるがデバイス自体は列挙されるため、kind だけで判定する。
+  useEffect(() => {
+    const md = navigator.mediaDevices
+    if (!md || typeof md.enumerateDevices !== 'function') return // 未対応・非セキュアは安全側(true)
+    let cancelled = false
+    md.enumerateDevices()
+      .then((devices) => {
+        if (cancelled) return
+        setHasCamera(devices.some((d) => d.kind === 'videoinput'))
+      })
+      .catch(() => {
+        // 判定不能のときは安全側で表示を維持する（何もしない=true のまま）。
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const getNatural = useCallback(() => {
     const img = imgRef.current
@@ -824,27 +848,32 @@ function MapEditorModal({ mapData, onSave, onDiscard }: MapEditorModalProps) {
                   </div>
                 ))}
                 <div className="flex flex-wrap gap-2">
-                  <label className="sr-only" htmlFor="marker-photo-camera">
-                    カメラで撮影
-                  </label>
-                  <input
-                    id="marker-photo-camera"
-                    ref={(element) => {
-                      cameraInputRefs.current[selected] = element
-                    }}
-                    className="sr-only"
-                    type="file"
-                    accept="image/*"
-                    capture={isLocalMode ? 'environment' : undefined}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0]
-                      if (file) void attachPhoto(selected, file)
-                      e.target.value = ''
-                    }}
-                  />
-                  <Button type="button" onClick={() => cameraInputRefs.current[selected]?.click()}>
-                    カメラで撮影
-                  </Button>
+                  {/* カメラが無いと確実に分かったときだけ「カメラで撮影」を出さない。 */}
+                  {hasCamera && (
+                    <>
+                      <label className="sr-only" htmlFor="marker-photo-camera">
+                        カメラで撮影
+                      </label>
+                      <input
+                        id="marker-photo-camera"
+                        ref={(element) => {
+                          cameraInputRefs.current[selected] = element
+                        }}
+                        className="sr-only"
+                        type="file"
+                        accept="image/*"
+                        capture={isLocalMode ? 'environment' : undefined}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) void attachPhoto(selected, file)
+                          e.target.value = ''
+                        }}
+                      />
+                      <Button type="button" onClick={() => cameraInputRefs.current[selected]?.click()}>
+                        カメラで撮影
+                      </Button>
+                    </>
+                  )}
                   <label className="sr-only" htmlFor="marker-photo-file">
                     ファイルを選択
                   </label>
