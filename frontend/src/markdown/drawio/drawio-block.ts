@@ -18,11 +18,30 @@ export interface DrawioBlock {
   start: number
   /** 終了オフセット（終了行の末尾の次。body.slice(start, end) がブロック全体）。 */
   end: number
+  /** 開始行 `:::drawio{title="..."}` の title（属性なし／空なら空文字）。 */
+  title: string
 }
 
 // 行頭（空白許容）の `:::`（3 連以上）に続けて drawio 名を持つ開始行。
-// 捕捉グループ 1 にコロン列を取り、終了行は同じ長さのコロンのみに一致させる。
-const OPEN_RE = /^[ \t]*(:{3,})drawio[ \t]*$/
+// 捕捉1: コロン列（終了行のコロン数一致判定に使う）。従来どおり。
+// 捕捉2: 末尾に任意で付く属性ブレース `{...}` の内側テキスト（例 `title="現場"`）。無ければ undefined。
+//   serializer（escapeDrawioTitle）が title 中の `}` を全角 `｝` へ正規化するため、janus が書いた
+//   開始行の値に生の `}` は現れず `[^}]*` で足りる（custom-map のコンテナ属性と同じ流儀）。
+const OPEN_RE = /^[ \t]*(:{3,})drawio(?:\{([^}]*)\})?[ \t]*$/
+
+/**
+ * 開始行のブレース内テキストから title 値を取り出す。無ければ空文字。
+ * 値は `"..."` または `'...'` で囲む。serializer（escapeDrawioTitle）が引用符・改行・`}` を
+ * 全角化/空白化して出すため、記法上の値はエスケープシーケンスを含まない。したがって
+ * アンエスケープは行わず、クォート内の生テキストをそのまま返す（serializer と対称）。
+ * これにより `\` を含む title（例 `C:\dir`）も serializer が literal で出し reader が literal で読み戻すため完全往復する。
+ */
+function extractTitleAttr(attrText: string | undefined): string {
+  if (!attrText) return ''
+  const m = /(?:^|\s)title\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(attrText)
+  if (!m) return ''
+  return m[1] ?? m[2] ?? ''
+}
 
 /** 指定長のコロンのみ（他ディレクティブ名を伴わない）終了行かを判定する。 */
 function isCloseLine(line: string, colonLength: number): boolean {
@@ -55,6 +74,7 @@ export function findDrawioBlocks(body: string): DrawioBlock[] {
       continue
     }
     const colonLength = open[1].length
+    const title = extractTitleAttr(open[2])
     const start = lineOffsets[i]
     // 対応する終了行（開始と同じコロン数）を探す。
     let closeLine = -1
@@ -74,7 +94,7 @@ export function findDrawioBlocks(body: string): DrawioBlock[] {
       end = lineOffsets[closeLine] + lines[closeLine].length
       nextLine = closeLine + 1
     }
-    blocks.push({ index, start, end })
+    blocks.push({ index, start, end, title })
     index += 1
     i = nextLine
   }

@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Map as MapIcon, PenTool } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useStorage } from '../storage/StorageProvider'
 import AppLayout from '../components/AppLayout'
@@ -98,6 +99,19 @@ const BUTTON_NORMAL_CLASS =
   ' border border-border bg-control text-fg hover:bg-control-hover hover:border-fg-muted'
 const BUTTON_ACCENT_CLASS =
   BUTTON_BASE_CLASS + ' bg-primary text-primary-contrast hover:bg-primary-hover'
+// 成功系（緑）: マップの追加・編集。前景は D-2 の実測コントラスト比に基づく
+// （ライト=text-fg(success 面に 4.31:1) / ダーク=text-primary-contrast(8.18:1)）。
+// success ライトの 4.31:1 は本文 AA(4.5:1) を 0.19 下回るが、index.css の既存トークンに
+// success より暗い前景が無く（独自色・新規トークン追加は制約で禁止）、font-semibold 付与＋
+// UI コンポーネント基準(WCAG 1.4.11, 3:1)充足で担保する。ダーク/ライトは dark: で追従。
+const BUTTON_SUCCESS_CLASS =
+  BUTTON_BASE_CLASS +
+  ' bg-success text-fg dark:text-primary-contrast font-semibold hover:bg-success/90'
+// 警告系（黄）: 描画の追加・編集。前景は D-2 の実測（ライト 6.34:1 / ダーク 10.08:1）で
+// 両モードとも本文 AA を満たす。success と同じ前景パターン（text-fg dark:text-primary-contrast）。
+const BUTTON_WARNING_CLASS =
+  BUTTON_BASE_CLASS +
+  ' bg-warning text-fg dark:text-primary-contrast font-semibold hover:bg-warning/90'
 const ALERT_ERROR_CLASS = 'rounded px-3 py-2 bg-danger/10 text-danger'
 
 /** 新規マップブロック（マーカーなし・参照なし）の初期 MapData。 */
@@ -150,6 +164,7 @@ function PageEditPage() {
     blockIndex: number | null
     xml: string
     src: string
+    title: string
   } | null>(null)
   // 新規描画（blockIndex=null）の autosave 重複（問題1）を防ぐためのセッション用ライブ
   // ブロックインデックス。最初の save で挿入先が確定したらその index を記録し、以降の
@@ -162,6 +177,17 @@ function PageEditPage() {
   // エディタは既定で全画面で開く（open 時に true をセット）。これはページ全体のスクロール文脈を
   // 排除し、表セル編集時のキャレット/編集ボックスの飛び（問題2）を実質回避するため（案A）。
   const [isDrawioFullscreen, setIsDrawioFullscreen] = useState(false)
+
+  // マップ・描画セクションのセレクトで選択中のブロックインデックス（0 始まり）。
+  // ブロックの追加・削除で件数が変わると範囲外になりうるため、レンダー時にクランプした
+  // 実効値（effective*SelectIndex）を参照する。state 本体の補正は onChange 時のみ行う
+  // （レンダー中に setState は呼ばない＝無限レンダー回避）。
+  const [mapSelectIndex, setMapSelectIndex] = useState(0)
+  const [drawioSelectIndex, setDrawioSelectIndex] = useState(0)
+
+  // 描画編集中の最新 title を applyDrawioXml（useCallback 依存空）から読むための ref。
+  // 同期は専用 useEffect([drawioEditing?.title]) 1 本に統一する（下記）。
+  const drawioEditingTitleRef = useRef('')
 
   // 本文中の custom-map ブロックの範囲（導線の出し分け・編集ボタンのラベル解決に使う）。
   // 件数とラベル解決が同一スナップショットを見るよう、findCustomMapBlocks は 1 回だけ呼ぶ。
@@ -181,8 +207,27 @@ function PageEditPage() {
     return title ? title : fallback
   }
 
-  // 本文中の drawio ブロック数（導線の出し分けに使う）。
-  const drawioBlockCount = findDrawioBlocks(body).length
+  // 本文中の drawio ブロックの範囲（件数とラベル解決が同一スナップショットを見るよう 1 回だけ呼ぶ）。
+  // マップ側（customMapBlocks）と同じ配列ベースの流儀に揃える。
+  const drawioBlocks = findDrawioBlocks(body)
+  const drawioBlockCount = drawioBlocks.length
+
+  /**
+   * index 番目の drawio ブロックのセレクト表示名を返す（mapBlockLabel と対称）。
+   * title があれば「〈title〉」、無ければ「描画 N」（N は 1 始まり）。
+   * findDrawioBlocks を再呼び出しせず、レンダースコープの drawioBlocks 配列から解決する。
+   */
+  const drawioBlockLabel = (index: number): string => {
+    const title = drawioBlocks[index]?.title?.trim()
+    return title ? title : `描画 ${index + 1}`
+  }
+
+  // セレクトの選択インデックスをレンダー時にクランプした実効値（範囲外アクセス防止）。
+  const effectiveMapSelectIndex = Math.min(mapSelectIndex, Math.max(0, customMapBlockCount - 1))
+  const effectiveDrawioSelectIndex = Math.min(drawioSelectIndex, Math.max(0, drawioBlockCount - 1))
+
+  // マップモーダル中・描画セッション中はいずれも本文を書き換える操作を全て無効化する（B-6）。
+  const anyEditing = drawioEditing !== null || mapEditing !== null
 
   // 既存ブロックを GUI 編集で開く。パースできなければエラー表示。
   const openMapBlock = (blockIndex: number) => {
@@ -241,8 +286,8 @@ function PageEditPage() {
     const xml = parseDrawioBlock(body.slice(block.start, block.end))
     // 既存ブロック編集はセッションの挿入先が既に確定しているので live index も同じ値にする。
     drawioSessionBlockIndexRef.current = blockIndex
-    // src は開いた時点のテーマで固定（問題3）。
-    setDrawioEditing({ blockIndex, xml, src: buildDrawioEmbedSrc(effectiveTheme) })
+    // src は開いた時点のテーマで固定（問題3）。初期 title は対象ブロックの現 title を引き継ぐ。
+    setDrawioEditing({ blockIndex, xml, src: buildDrawioEmbedSrc(effectiveTheme), title: block.title })
     setIsDrawioFullscreen(true)
   }
 
@@ -251,8 +296,8 @@ function PageEditPage() {
   const openNewDrawioBlock = () => {
     // 新規はまだ挿入先が未確定。最初の save で確定する（問題1）。
     drawioSessionBlockIndexRef.current = null
-    // src は開いた時点のテーマで固定（問題3）。
-    setDrawioEditing({ blockIndex: null, xml: '', src: buildDrawioEmbedSrc(effectiveTheme) })
+    // src は開いた時点のテーマで固定（問題3）。新規描画の初期 title は空。
+    setDrawioEditing({ blockIndex: null, xml: '', src: buildDrawioEmbedSrc(effectiveTheme), title: '' })
     setIsDrawioFullscreen(true)
   }
 
@@ -309,7 +354,12 @@ function PageEditPage() {
   // 既存図を置換する代わりに本文末尾へ新規ブロックを追記してしまう（既存図が更新されず
   // 新旧の図が併存する）。snapshot を閉じ込めることでこの競合を断つ。
   const applyDrawioXml = useCallback((xml: string) => {
-    const serialized = serializeDrawio(xml)
+    // 最新 title を ref から読み、XML と一緒に記法へ乗せる。drawioEditing 本体は参照せず
+    // ref 経由にすることで useCallback の依存を空に保ち、保存全経路（onSave/onAutosave/onExport）の
+    // 反映点をこの 1 箇所でカバーする。ref はコミット後同期（下記 useEffect）で、保存イベントは
+    // ユーザのタイトル入力（state 更新→コミット）より後の別タスクで到来するため、保存時に ref が
+    // 1 つ前の値になることはない。
+    const serialized = serializeDrawio(xml, drawioEditingTitleRef.current)
     // 呼び出し時点のライブ index を snapshot（以降の close による ref リセットと競合させない）。
     const snapshotIndex = drawioSessionBlockIndexRef.current
     setBody((prev) => {
@@ -329,6 +379,12 @@ function PageEditPage() {
       return block ? replaceDrawioBlock(prev, block, serialized) : prev
     })
   }, [])
+
+  // drawioEditing.title の最新値を ref へ同期する専用 effect（唯一の同期経路）。
+  // コミット後に走るため drawioEditingTitleRef.current は「直近コミット済みの title」を保持する。
+  useEffect(() => {
+    drawioEditingTitleRef.current = drawioEditing?.title ?? ''
+  }, [drawioEditing?.title])
 
   // embed iframe の postMessage ハンドラ（proto=json）を window に登録する。
   // init で既存 XML を load、save で本文へ反映、exit でクローズ。origin は自オリジン固定。
@@ -354,7 +410,10 @@ function PageEditPage() {
       },
       onExport: (exportedXml) => {
         // {action:'export',format:'xml'} への応答。最新 XML を本文へ反映する。
-        if (exportedXml.length > 0) applyDrawioXml(exportedXml)
+        // XML が空でも title が入力されていれば反映する（title-only 変更を落とさない）。
+        // 新規かつ XML・title とも空のときは applyDrawioXml を呼ばず空ブロックを作らない。
+        const hasTitle = drawioEditingTitleRef.current !== ''
+        if (exportedXml.length > 0 || hasTitle) applyDrawioXml(exportedXml)
         // 「描画編集を閉じる」からの export だった場合は、回収後に閉じる（フォールバックタイマー解除）。
         if (drawioCloseAfterExportRef.current) {
           drawioCloseAfterExportRef.current = false
@@ -513,59 +572,91 @@ function PageEditPage() {
             </p>
           )}
           {/* 導線は常に表示する。編集はモーダル（MapEditorModal）で開くため、ここに
-              インライン展開は持たない。モーダル表示中は『ページを保存』を無効化する。 */}
+              インライン展開は持たない。編集セッション中（anyEditing）は『ページを保存』と
+              あわせて本文を書き換える操作（追加・セレクト・編集）を全て無効化する（B-6）。
+              追加・編集ボタンは success（緑）で色分けし、アイコン（MapIcon）をテキスト左へ
+              aria-hidden で添える（アクセシブル名はテキスト「マップを追加」「マップを編集」を維持）。
+              <select> は無着色（base 体裁のまま）。 */}
           <div className="flex items-center gap-2">
-            <span className="mr-1 text-sm font-semibold text-fg-muted">マップ</span>
-            {/* 新規作成はアクセント（主要アクション）、既存の編集は中立の normal。 */}
             <button
               type="button"
               onClick={openNewMapBlock}
-              disabled={mapEditing !== null}
-              className={BUTTON_ACCENT_CLASS}
+              disabled={anyEditing}
+              className={BUTTON_SUCCESS_CLASS + ' gap-1.5'}
             >
+              <MapIcon size={16} aria-hidden="true" focusable={false} />
               マップを追加
             </button>
-            {Array.from({ length: customMapBlockCount }, (_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => openMapBlock(i)}
-                disabled={mapEditing !== null}
-                className={BUTTON_NORMAL_CLASS}
-              >
-                {`${mapBlockLabel(i)} を編集`}
-              </button>
-            ))}
+            {customMapBlockCount > 0 && (
+              <>
+                <select
+                  aria-label="編集するマップを選択"
+                  value={String(effectiveMapSelectIndex)}
+                  onChange={(e) => setMapSelectIndex(Number(e.target.value))}
+                  disabled={anyEditing}
+                >
+                  {Array.from({ length: customMapBlockCount }, (_, i) => (
+                    <option key={i} value={String(i)}>
+                      {mapBlockLabel(i)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => openMapBlock(effectiveMapSelectIndex)}
+                  disabled={anyEditing}
+                  className={BUTTON_SUCCESS_CLASS + ' gap-1.5'}
+                >
+                  <MapIcon size={16} aria-hidden="true" focusable={false} />
+                  マップを編集
+                </button>
+              </>
+            )}
           </div>
         </section>
 
         <section className="flex flex-col gap-1.5" aria-label="drawio 描画 編集">
+          {/* 追加・編集ボタンは warning（黄）で色分けし、アイコン（PenTool）をテキスト左へ
+              aria-hidden で添える（アクセシブル名はテキスト「描画を追加」「描画を編集」を維持）。
+              編集セッション中（anyEditing）は追加・セレクト・編集を全て無効化する（finding#1/B-6）。
+              別の描画を開くと現在の iframe が exit/modified ガードを通らず直接差し替えられ、
+              autosave 到達前の未反映 XML を取りこぼすため、先に「描画編集を閉じる」で確定させる。
+              <select> は無着色（base 体裁のまま）。 */}
           <div className="flex items-center gap-2">
-            <span className="mr-1 text-sm font-semibold text-fg-muted">描画</span>
-            {/* 新規作成はアクセント（主要アクション）、既存の編集は中立の normal。
-                draw.io 編集セッション中（drawioEditing!==null）は追加・編集ボタンを無効化する
-                （finding#1）。別の描画を開くと現在の iframe が exit/modified ガードを通らず
-                直接差し替えられ、autosave 到達前の未反映 XML を取りこぼすため。先に
-                「描画編集を閉じる」で exit ガードを通してセッションを終えてから次を開かせる。 */}
             <button
               type="button"
               onClick={openNewDrawioBlock}
-              disabled={drawioEditing !== null}
-              className={BUTTON_ACCENT_CLASS}
+              disabled={anyEditing}
+              className={BUTTON_WARNING_CLASS + ' gap-1.5'}
             >
+              <PenTool size={16} aria-hidden="true" focusable={false} />
               描画を追加
             </button>
-            {Array.from({ length: drawioBlockCount }, (_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => openDrawioBlock(i)}
-                disabled={drawioEditing !== null}
-                className={BUTTON_NORMAL_CLASS}
-              >
-                描画 {i + 1} を編集
-              </button>
-            ))}
+            {drawioBlockCount > 0 && (
+              <>
+                <select
+                  aria-label="編集する描画を選択"
+                  value={String(effectiveDrawioSelectIndex)}
+                  onChange={(e) => setDrawioSelectIndex(Number(e.target.value))}
+                  disabled={anyEditing}
+                >
+                  {Array.from({ length: drawioBlockCount }, (_, i) => (
+                    <option key={i} value={String(i)}>
+                      {drawioBlockLabel(i)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => openDrawioBlock(effectiveDrawioSelectIndex)}
+                  disabled={anyEditing}
+                  className={BUTTON_WARNING_CLASS + ' gap-1.5'}
+                >
+                  <PenTool size={16} aria-hidden="true" focusable={false} />
+                  描画を編集
+                </button>
+              </>
+            )}
           </div>
           {drawioEditing !== null && (
             <div
@@ -578,6 +669,20 @@ function PageEditPage() {
               aria-modal={isDrawioFullscreen ? true : undefined}
               aria-label={isDrawioFullscreen ? 'drawio 描画エディタ（全画面）' : undefined}
             >
+              {/* 描画のタイトル入力（マップモーダルの「タイトル」フィールドと同体裁＝base input）。
+                  セッション中に編集するコントロールのため anyEditing の無効化対象には含めない。
+                  全画面オーバーレイでは縦積みの先頭に置き、下に iframe（flex-1）・操作ボタン行が続く。 */}
+              <div className="grid gap-1 [&>label]:text-sm [&>label]:text-fg">
+                <label htmlFor="drawio-title">タイトル</label>
+                <input
+                  id="drawio-title"
+                  type="text"
+                  value={drawioEditing.title}
+                  onChange={(e) =>
+                    setDrawioEditing((prev) => (prev ? { ...prev, title: e.target.value } : prev))
+                  }
+                />
+              </div>
               <iframe
                 ref={drawioIframeRef}
                 src={drawioEditing.src}

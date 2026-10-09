@@ -12,6 +12,7 @@ import type { Root } from 'mdast'
 import type { ContainerDirective } from 'mdast-util-directive'
 import remarkDrawio from './remark-drawio'
 import { serializeDrawio } from './serialize-drawio'
+import { findDrawioBlocks } from './drawio-block'
 
 /** 記法テキストをパースし drawio コンテナの data-drawio（XML）を取り出す。無ければ null。 */
 function parseDrawioXml(markdown: string): string | null {
@@ -107,6 +108,69 @@ describe('T-DRAW: 往復無損失', () => {
       '</mxGraphModel>',
     ].join('\n')
     expect(roundTrip(xml)).toBe(xml)
+  })
+})
+
+describe('serializeDrawio: title 対応と正規化（要件C-4/C-5）', () => {
+  it('(a) title 省略時は従来どおり属性なし :::drawio（後方互換・既存テスト不変）', () => {
+    expect(serializeDrawio('<mxGraphModel/>')).toBe(
+      ':::drawio\n```xml\n<mxGraphModel/>\n```\n:::',
+    )
+  })
+
+  it('(b) title 非空のとき開始行に {title="..."} を付ける', () => {
+    const out = serializeDrawio('<mxGraphModel/>', '現場図')
+    expect(out.split('\n')[0]).toBe(':::drawio{title="現場図"}')
+  })
+
+  it('(c) 正規化: " と \' は全角化、改行は空白、} は全角、\\ は literal 保持', () => {
+    expect(serializeDrawio('<x/>', 'a"b').split('\n')[0]).toBe(':::drawio{title="a”b"}')
+    expect(serializeDrawio('<x/>', "a'b").split('\n')[0]).toBe(':::drawio{title="a’b"}')
+    expect(serializeDrawio('<x/>', 'a\nb').split('\n')[0]).toBe(':::drawio{title="a b"}')
+    expect(serializeDrawio('<x/>', 'a}b').split('\n')[0]).toBe(':::drawio{title="a｝b"}')
+    // バックスラッシュはエスケープせずそのまま（remark-directive が literal 保持）。
+    expect(serializeDrawio('<x/>', 'C:\\dir').split('\n')[0]).toBe(':::drawio{title="C:\\dir"}')
+  })
+
+  it('(d) title 往復（正規化後の値）: serialize → findDrawioBlocks で一致する', () => {
+    const cases: Array<[string, string]> = [
+      ['現場レイアウト', '現場レイアウト'], // 日本語はそのまま
+      ['genba', 'genba'], // ASCII はそのまま
+      ['C:\\dir\\x', 'C:\\dir\\x'], // バックスラッシュは literal 往復
+      ['a"b', 'a”b'], // 二重引用符は全角化後の値で往復
+      ["a'b", 'a’b'], // 単引用符は全角化後の値で往復
+      ['a\nb', 'a b'], // 改行は空白化後の値で往復
+      ['a}b', 'a｝b'], // } は全角化後の値で往復
+    ]
+    for (const [input, normalized] of cases) {
+      const out = serializeDrawio('<mxGraphModel/>', input)
+      const blocks = findDrawioBlocks(out)
+      expect(blocks).toHaveLength(1)
+      expect(blocks[0].title).toBe(normalized)
+    }
+  })
+
+  it('(e) 閲覧経路の無回帰（最重要）: 特殊文字 title でも drawio が認識され data-drawio が XML と一致する', () => {
+    // 正規化を外した実装（旧エスケープのように `"`→`\"` を出す）だと、"/' を含むケースで
+    // remark-directive が開始行を container directive と認識せず drawio 非認識になり本テストが落ちる。
+    // ＝このテストは「閲覧経路で図が消える」破壊（レビュー指摘1）を検出する構成である。
+    const xml = '<mxGraphModel><root/></mxGraphModel>'
+    const titles = [
+      'a"b', // 二重引用符
+      "a'b", // 単引用符
+      'C:\\dir', // バックスラッシュ
+      'line1\nline2', // 改行
+      'a b c', // 空白
+      '現場レイアウト', // 日本語
+      'a}b', // 閉じブレース
+      'a|b', // パイプ
+      'A:B', // コロン
+      'a/b', // スラッシュ
+    ]
+    for (const title of titles) {
+      const out = serializeDrawio(xml, title)
+      expect(parseDrawioXml(out)).toBe(xml)
+    }
   })
 })
 

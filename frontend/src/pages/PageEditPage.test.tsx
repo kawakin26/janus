@@ -305,8 +305,9 @@ describe('PageEditPage', () => {
     })
 
     const user = userEvent.setup()
-    // 2 番目の既存描画（index 1）を編集で開く。
-    await user.click(screen.getByRole('button', { name: '描画 2 を編集' }))
+    // 2 番目の既存描画（index 1）をセレクトで選び「描画を編集」で開く。
+    await user.selectOptions(screen.getByRole('combobox', { name: '編集する描画を選択' }), '1')
+    await user.click(screen.getByRole('button', { name: '描画を編集' }))
     await screen.findByTitle('drawio 描画エディタ')
 
     // save と同時に exit:true を受信（「ファイル→保存」して閉じる操作）。
@@ -410,10 +411,10 @@ describe('PageEditPage', () => {
     })
   })
 
-  it('draw.io 編集中は「描画を追加」「描画 N を編集」が無効化され、別セッションへ切り替えられない（finding#1）', async () => {
+  it('draw.io 編集中は追加・セレクト・編集が無効化され、別セッションへ切り替えられない（finding#1/B-6）', async () => {
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
-      // 既存 :::drawio ブロックを 1 つ持つ本文（「描画 1 を編集」ボタンが出る）。
+      // 既存 :::drawio ブロックを 1 つ持つ本文（セレクト＋「描画を編集」が出る）。
       getPage: vi.fn(async () =>
         makePage({ body: ':::drawio\n```\n<mxGraphModel>X</mxGraphModel>\n```\n:::\n' }),
       ),
@@ -425,28 +426,30 @@ describe('PageEditPage', () => {
     })
 
     const user = userEvent.setup()
-    // セッション開始前は追加・編集とも有効。
+    // セッション開始前は追加・セレクト・編集とも有効。
     expect(screen.getByRole('button', { name: '描画を追加' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '描画 1 を編集' })).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: '編集する描画を選択' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '描画を編集' })).toBeEnabled()
 
-    // 「描画 1 を編集」で全画面オーバーレイが開く。全画面を解除して背景ボタンを操作可能にする。
-    await user.click(screen.getByRole('button', { name: '描画 1 を編集' }))
+    // 「描画を編集」で全画面オーバーレイが開く。全画面を解除して背景ボタンを操作可能にする。
+    await user.click(screen.getByRole('button', { name: '描画を編集' }))
     await screen.findByTitle('drawio 描画エディタ')
     await user.click(screen.getByRole('button', { name: '全画面を解除' }))
 
-    // active セッション中は追加・編集とも無効化され、別セッションへ切り替えられない。
+    // active セッション中は追加・セレクト・編集とも無効化され、別セッションへ切り替えられない。
     expect(screen.getByRole('button', { name: '描画を追加' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '描画 1 を編集' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: '編集する描画を選択' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '描画を編集' })).toBeDisabled()
 
-    // 「描画編集を閉じる」→ exit(modified:false) でセッションを終えると再び有効化される。
-    // 「描画編集を閉じる」は export を要求し、応答（最新 XML）回収後に閉じる。
+    // 「描画編集を閉じる」→ export 応答（最新 XML）回収後に閉じると再び有効化される。
     await user.click(screen.getByRole('button', { name: '描画編集を閉じる' }))
     dispatchDrawioMessage({ event: 'export', xml: '<mxGraphModel>X</mxGraphModel>', format: 'xml' })
     await waitFor(() => {
       expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
     })
     expect(screen.getByRole('button', { name: '描画を追加' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '描画 1 を編集' })).toBeEnabled()
+    expect(screen.getByRole('combobox', { name: '編集する描画を選択' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '描画を編集' })).toBeEnabled()
   })
 
   it('「マップを追加」でマップ編集モーダル（dialog, aria-label=マップ編集）がフォーム外に開く', async () => {
@@ -544,7 +547,7 @@ describe('PageEditPage', () => {
     expect(screen.queryByTestId('view')).toBeNull()
   })
 
-  it('title を持つマップブロックの編集ボタンラベルが「〈title〉を編集」になる（作業2）', async () => {
+  it('title を持つマップブロックのセレクト option ラベルが「〈title〉」になる（作業2）', async () => {
     const body = [
       ':::custom-map{filename="plan.svg" title="現場図"}',
       '',
@@ -559,11 +562,12 @@ describe('PageEditPage', () => {
     })
     renderEdit(client, '/edit/docs/intro')
 
-    expect(await screen.findByRole('button', { name: '現場図 を編集' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'マップ 1 を編集' })).toBeNull()
+    const select = await screen.findByRole('combobox', { name: '編集するマップを選択' })
+    expect(within(select).getByRole('option', { name: '現場図' })).toBeInTheDocument()
+    expect(within(select).queryByRole('option', { name: 'マップ 1' })).toBeNull()
   })
 
-  it('title が無いマップブロックの編集ボタンラベルは「マップ N を編集」のまま（作業2・後方互換）', async () => {
+  it('title が無いマップブロックのセレクト option ラベルは「マップ N」のまま（作業2・後方互換）', async () => {
     const body = [':::custom-map{filename="plan.svg"}', '', '- x=10 y=20', ':::'].join('\n')
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
@@ -573,10 +577,11 @@ describe('PageEditPage', () => {
     })
     renderEdit(client, '/edit/docs/intro')
 
-    expect(await screen.findByRole('button', { name: 'マップ 1 を編集' })).toBeInTheDocument()
+    const select = await screen.findByRole('combobox', { name: '編集するマップを選択' })
+    expect(within(select).getByRole('option', { name: 'マップ 1' })).toBeInTheDocument()
   })
 
-  it('複数ブロック（title あり/なし混在）で各ラベルが独立に解決される（作業2）', async () => {
+  it('複数ブロック（title あり/なし混在）で各 option ラベルが独立に解決される（作業2）', async () => {
     const body = [
       ':::custom-map{filename="a.svg"}',
       '',
@@ -596,8 +601,9 @@ describe('PageEditPage', () => {
     })
     renderEdit(client, '/edit/docs/intro')
 
-    expect(await screen.findByRole('button', { name: 'マップ 1 を編集' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '二番目 を編集' })).toBeInTheDocument()
+    const select = await screen.findByRole('combobox', { name: '編集するマップを選択' })
+    expect(within(select).getByRole('option', { name: 'マップ 1' })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: '二番目' })).toBeInTheDocument()
   })
 
   it('新規追加で開いたモーダルの見出しが「マップ 〈既存数+1〉 を編集」になる（作業2）', async () => {
@@ -609,7 +615,7 @@ describe('PageEditPage', () => {
       listAssets: vi.fn(async () => []),
     })
     renderEdit(client, '/edit/docs/intro')
-    await screen.findByRole('button', { name: 'マップ 1 を編集' })
+    await screen.findByRole('combobox', { name: '編集するマップを選択' })
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'マップを追加' }))
@@ -634,8 +640,272 @@ describe('PageEditPage', () => {
     renderEdit(client, '/edit/docs/intro')
 
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: '現場図 を編集' }))
+    await screen.findByRole('combobox', { name: '編集するマップを選択' })
+    await user.click(screen.getByRole('button', { name: 'マップを編集' }))
     const dialog = await screen.findByRole('dialog', { name: 'マップ編集' })
     expect(within(dialog).getByTestId('map-editor-heading')).toHaveTextContent('現場図 を編集')
+  })
+
+  it('対象 0 個のときセレクトも編集ボタンも非表示で、追加ボタンのみ表示される（B-3）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body: '本文だけ（ブロックなし）' })),
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+    // 追加ボタンは表示。
+    expect(screen.getByRole('button', { name: 'マップを追加' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '描画を追加' })).toBeInTheDocument()
+    // セレクト・編集ボタンは非表示。
+    expect(screen.queryByRole('combobox', { name: '編集するマップを選択' })).toBeNull()
+    expect(screen.queryByRole('combobox', { name: '編集する描画を選択' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'マップを編集' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '描画を編集' })).toBeNull()
+  })
+
+  it('対象 1 個のときセレクトと編集ボタンが表示され、唯一の対象を編集で開ける（B-3）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () =>
+        makePage({ body: ':::drawio\n```\n<mxGraphModel>ONE</mxGraphModel>\n```\n:::\n' }),
+      ),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+    const select = screen.getByRole('combobox', { name: '編集する描画を選択' }) as HTMLSelectElement
+    // 唯一の対象（index 0）が選択済み。
+    expect(select.value).toBe('0')
+    expect(within(select).getByRole('option', { name: '描画 1' })).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '描画を編集' }))
+    expect(await screen.findByTitle('drawio 描画エディタ')).toBeInTheDocument()
+  })
+
+  it('対象複数のときセレクトで 2 番目を選び編集すると 2 番目のブロックが開く（B-3/B-5）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () =>
+        makePage({
+          body:
+            ':::drawio{title="一番目"}\n```\n<mxGraphModel>A</mxGraphModel>\n```\n:::\n\n' +
+            ':::drawio{title="二番目"}\n```\n<mxGraphModel>B</mxGraphModel>\n```\n:::\n',
+        }),
+      ),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+    const select = screen.getByRole('combobox', { name: '編集する描画を選択' })
+    expect(within(select).getByRole('option', { name: '一番目' })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: '二番目' })).toBeInTheDocument()
+
+    const user = userEvent.setup()
+    await user.selectOptions(select, '1')
+    await user.click(screen.getByRole('button', { name: '描画を編集' }))
+    await screen.findByTitle('drawio 描画エディタ')
+    // 2 番目のタイトルが初期値として入っていること（= 2 番目のブロックが開いた）。
+    const dialog = screen.getByRole('dialog', { name: 'drawio 描画エディタ（全画面）' })
+    expect((within(dialog).getByLabelText('タイトル') as HTMLInputElement).value).toBe('二番目')
+  })
+
+  it('drawio title を編集→描画編集を閉じる→export 応答で本文に :::drawio{title="..."} が入る（C-6）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body: '' })),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '描画を追加' }))
+    await screen.findByTitle('drawio 描画エディタ')
+    await user.type(
+      within(screen.getByRole('dialog', { name: 'drawio 描画エディタ（全画面）' })).getByLabelText('タイトル'),
+      '現場レイアウト',
+    )
+
+    await user.click(screen.getByRole('button', { name: '描画編集を閉じる' }))
+    dispatchDrawioMessage({ event: 'export', xml: '<mxGraphModel>DONE</mxGraphModel>', format: 'xml' })
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+
+    const bodyField = screen.getByLabelText('本文（Markdown）') as HTMLTextAreaElement
+    expect(bodyField.value).toContain(':::drawio{title="現場レイアウト"}')
+    expect(bodyField.value).toContain('DONE')
+  })
+
+  it('新規描画で XML 空＋title のみでも export で title 付きブロックが入る（C-6(3)）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body: '' })),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '描画を追加' }))
+    await screen.findByTitle('drawio 描画エディタ')
+    await user.type(
+      within(screen.getByRole('dialog', { name: 'drawio 描画エディタ（全画面）' })).getByLabelText('タイトル'),
+      'タイトルのみ',
+    )
+
+    await user.click(screen.getByRole('button', { name: '描画編集を閉じる' }))
+    // export は空 XML を返す（未作図）。|| hasTitle 分岐で反映されること。
+    dispatchDrawioMessage({ event: 'export', xml: '', format: 'xml' })
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+
+    const bodyField = screen.getByLabelText('本文（Markdown）') as HTMLTextAreaElement
+    expect(bodyField.value).toContain(':::drawio{title="タイトルのみ"}')
+  })
+
+  it('新規描画で XML・title とも空のときは空ブロックを作らない（C-6(3)）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body: '初期本文' })),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('初期本文')).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '描画を追加' }))
+    await screen.findByTitle('drawio 描画エディタ')
+    // 何も入力せず閉じる。
+    await user.click(screen.getByRole('button', { name: '描画編集を閉じる' }))
+    dispatchDrawioMessage({ event: 'export', xml: '', format: 'xml' })
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+
+    const bodyField = screen.getByLabelText('本文（Markdown）') as HTMLTextAreaElement
+    // ブロックは追加されず本文は不変。
+    expect(bodyField.value).toBe('初期本文')
+    expect(bodyField.value).not.toContain(':::drawio')
+  })
+
+  it('既存 drawio の title 編集→export で対象ブロックの title が置換され他ブロックは不変（C-6）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () =>
+        makePage({
+          body:
+            ':::drawio{title="一番目"}\n```\n<mxGraphModel>A</mxGraphModel>\n```\n:::\n\n' +
+            ':::drawio{title="二番目"}\n```\n<mxGraphModel>B</mxGraphModel>\n```\n:::\n',
+        }),
+      ),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    // 2 番目を開いて title を変更する。
+    await user.selectOptions(screen.getByRole('combobox', { name: '編集する描画を選択' }), '1')
+    await user.click(screen.getByRole('button', { name: '描画を編集' }))
+    await screen.findByTitle('drawio 描画エディタ')
+    const titleInput = within(
+      screen.getByRole('dialog', { name: 'drawio 描画エディタ（全画面）' }),
+    ).getByLabelText('タイトル')
+    await user.clear(titleInput)
+    await user.type(titleInput, '二番目改')
+
+    await user.click(screen.getByRole('button', { name: '描画編集を閉じる' }))
+    dispatchDrawioMessage({ event: 'export', xml: '<mxGraphModel>B</mxGraphModel>', format: 'xml' })
+    await waitFor(() => {
+      expect(screen.queryByTitle('drawio 描画エディタ')).toBeNull()
+    })
+
+    const bodyField = screen.getByLabelText('本文（Markdown）') as HTMLTextAreaElement
+    expect(bodyField.value).toContain(':::drawio{title="二番目改"}')
+    expect(bodyField.value).toContain(':::drawio{title="一番目"}')
+    expect(bodyField.value).not.toContain(':::drawio{title="二番目"}')
+    // ブロック数は 2 のまま（追記なし）。
+    expect((bodyField.value.match(/:::drawio/g) ?? []).length).toBe(2)
+  })
+
+  it('マップモーダル中はマップ・描画の両系統（追加/セレクト/編集）が無効化される（B-6）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () =>
+        makePage({
+          body:
+            ':::custom-map{filename="a.svg"}\n\n- x=1 y=2\n:::\n\n' +
+            ':::drawio\n```\n<mxGraphModel>X</mxGraphModel>\n```\n:::\n',
+        }),
+      ),
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'マップを追加' }))
+    await screen.findByRole('dialog', { name: 'マップ編集' })
+
+    // マップモーダル中は両系統の追加・セレクト・編集が無効化される。
+    expect(screen.getByRole('button', { name: 'マップを追加' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: '編集するマップを選択' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'マップを編集' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '描画を追加' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: '編集する描画を選択' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '描画を編集' })).toBeDisabled()
+  })
+
+  it('追加・編集ボタンにアイコンが付いても aria-hidden でアクセシブル名はテキストのまま（A-2）', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () =>
+        makePage({
+          body:
+            ':::custom-map{filename="a.svg"}\n\n- x=1 y=2\n:::\n\n' +
+            ':::drawio\n```\n<mxGraphModel>X</mxGraphModel>\n```\n:::\n',
+        }),
+      ),
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'ページ編集' })).toBeInTheDocument()
+    })
+    // アクセシブル名はテキストのまま引ける（アイコンは aria-hidden で名前に寄与しない）。
+    const addMap = screen.getByRole('button', { name: 'マップを追加' })
+    const editMap = screen.getByRole('button', { name: 'マップを編集' })
+    const addDrawio = screen.getByRole('button', { name: '描画を追加' })
+    const editDrawio = screen.getByRole('button', { name: '描画を編集' })
+    // アイコン SVG が aria-hidden で描画されている。
+    for (const btn of [addMap, editMap, addDrawio, editDrawio]) {
+      expect(btn.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
+    }
   })
 })

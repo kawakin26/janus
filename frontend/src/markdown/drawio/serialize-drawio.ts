@@ -36,14 +36,40 @@ function longestRun(value: string, char: string): number {
 }
 
 /**
+ * title をブレース内 `"..."` へ安全に出すための正規化。
+ * 閲覧経路（remark-directive → remark-drawio）が受理できる文字集合へ寄せる（実測で確定）:
+ * - `"` / `'` を含む開始行は remark-directive が container directive として認識せず、
+ *   閲覧側で drawio ブロックが消える（XML 抽出が落ちる）。そこで `"`→`”`、`'`→`’`（全角）へ置換する。
+ *   これは custom-map の escapeContainerAttrValue（コンテナ値にリテラル引用符を出さない）と同じ流儀。
+ * - 改行は空白へ畳む（title は 1 行想定・属性行を壊さない）。
+ * - `}` はブレースを閉じて開始行を壊すため値へ出さない（全角 `｝` へ置換）。
+ * - バックスラッシュ `\` は remark-directive がブレース内で literal 保持する（畳まない）ため、
+ *   エスケープせずそのまま出す。アンエスケープ（drawio-block の extractTitleAttr）も不要（対称に「何もしない」）。
+ * この正規化は非可逆（`"`→`”` 等は元に戻らない）だが、title は識別用ラベルであり視認上ほぼ等価で、
+ * 引用符入り title で図が丸ごと消える静かなデータ破壊を避けることを最優先する（意図的仕様）。
+ */
+function escapeDrawioTitle(value: string): string {
+  return value
+    .replace(/\r?\n/g, ' ')
+    .replace(/"/g, '”')
+    .replace(/'/g, '’')
+    .replace(/}/g, '｝')
+}
+
+/**
  * mxGraph XML を `:::drawio` 記法テキストへ変換する。
  * 出力は remark-drawio の unified パイプラインで再パースすると data-drawio に
  * 同一の XML が復元される（行頭 `:::`・連続バッククォート・引用符・改行を保持）。
+ *
+ * title が非空のときは開始行を `:::drawio{title="<正規化後>"}` にする（後方互換のため既定は空）。
+ * title が空なら従来どおり属性なし `:::drawio` を出す。title の正規化は escapeDrawioTitle 参照。
  */
-export function serializeDrawio(xml: string): string {
+export function serializeDrawio(xml: string, title = ''): string {
   const colonLength = Math.max(MIN_FENCE_LENGTH, longestRun(xml, ':') + 1)
   const colons = ':'.repeat(colonLength)
   const codeFenceLength = Math.max(MIN_FENCE_LENGTH, longestRun(xml, '`') + 1)
   const codeFence = '`'.repeat(codeFenceLength)
-  return [`${colons}drawio`, `${codeFence}xml`, xml, codeFence, colons].join('\n')
+  const open =
+    title !== '' ? `${colons}drawio{title="${escapeDrawioTitle(title)}"}` : `${colons}drawio`
+  return [open, `${codeFence}xml`, xml, codeFence, colons].join('\n')
 }
