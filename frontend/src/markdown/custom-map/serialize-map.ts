@@ -33,6 +33,7 @@ const SCALE_DEFAULT = 1
 const RESTORE_DEFAULT = 15
 const ROTATE_DEFAULT = 0
 const LINK_DEFAULT = ''
+const TITLE_DEFAULT = ''
 const MARKER_COLOR_DEFAULT = '#ff3b30'
 
 /** 生の改行を `|`（既存記法の改行表現）へ変換する。CRLF/CR も正規化する。 */
@@ -115,6 +116,8 @@ function serializeContainerOpen(mapData: MapData): string {
   }
   if (mapData.rotate !== ROTATE_DEFAULT) tokens.push(containerAttr('rotate', String(mapData.rotate)))
   if (mapData.link !== LINK_DEFAULT) tokens.push(containerAttr('link', mapData.link))
+  // title は link と同じ扱い（既定の空文字なら省略、エスケープも containerAttr に揃える）。
+  if (mapData.title !== TITLE_DEFAULT) tokens.push(containerAttr('title', mapData.title))
   if (mapData.pinSize !== PIN_SIZE_DEFAULT) {
     tokens.push(containerAttr('pinSize', String(mapData.pinSize)))
   }

@@ -5,7 +5,7 @@
 // createPage が ApiError(409) を throw したとき日本語メッセージが role="alert" に出て遷移しない、を検証する。
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { StorageProvider } from '../storage/StorageProvider'
@@ -542,5 +542,100 @@ describe('PageEditPage', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('同一パスのページが既に存在します')
     })
     expect(screen.queryByTestId('view')).toBeNull()
+  })
+
+  it('title を持つマップブロックの編集ボタンラベルが「〈title〉を編集」になる（作業2）', async () => {
+    const body = [
+      ':::custom-map{filename="plan.svg" title="現場図"}',
+      '',
+      '- x=10 y=20 label="入口"',
+      ':::',
+    ].join('\n')
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body })),
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    expect(await screen.findByRole('button', { name: '現場図 を編集' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'マップ 1 を編集' })).toBeNull()
+  })
+
+  it('title が無いマップブロックの編集ボタンラベルは「マップ N を編集」のまま（作業2・後方互換）', async () => {
+    const body = [':::custom-map{filename="plan.svg"}', '', '- x=10 y=20', ':::'].join('\n')
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body })),
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    expect(await screen.findByRole('button', { name: 'マップ 1 を編集' })).toBeInTheDocument()
+  })
+
+  it('複数ブロック（title あり/なし混在）で各ラベルが独立に解決される（作業2）', async () => {
+    const body = [
+      ':::custom-map{filename="a.svg"}',
+      '',
+      '- x=1 y=2',
+      ':::',
+      '',
+      ':::custom-map{filename="b.svg" title="二番目"}',
+      '',
+      '- x=3 y=4',
+      ':::',
+    ].join('\n')
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body })),
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    expect(await screen.findByRole('button', { name: 'マップ 1 を編集' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '二番目 を編集' })).toBeInTheDocument()
+  })
+
+  it('新規追加で開いたモーダルの見出しが「マップ 〈既存数+1〉 を編集」になる（作業2）', async () => {
+    const body = [':::custom-map{filename="a.svg"}', '', '- x=1 y=2', ':::'].join('\n')
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body })),
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+    await screen.findByRole('button', { name: 'マップ 1 を編集' })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'マップを追加' }))
+    const dialog = await screen.findByRole('dialog', { name: 'マップ編集' })
+    // 既存 1 ブロック → 新規は番号 2。title 未設定なのでフォールバック表示。
+    expect(within(dialog).getByTestId('map-editor-heading')).toHaveTextContent('マップ 2 を編集')
+  })
+
+  it('既存ブロック編集で開いたモーダルの見出しが対象タイトルになる（作業2）', async () => {
+    const body = [
+      ':::custom-map{filename="plan.svg" title="現場図"}',
+      '',
+      '- x=10 y=20',
+      ':::',
+    ].join('\n')
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage({ body })),
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByRole('button', { name: '現場図 を編集' }))
+    const dialog = await screen.findByRole('dialog', { name: 'マップ編集' })
+    expect(within(dialog).getByTestId('map-editor-heading')).toHaveTextContent('現場図 を編集')
   })
 })

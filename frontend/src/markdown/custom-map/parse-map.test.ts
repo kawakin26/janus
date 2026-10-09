@@ -110,3 +110,20 @@ describe('buildMapData: マーカー表示属性', () => {
     expect(data.markers).toHaveLength(1)
   })
 })
+
+describe('buildMapData: title 属性（作業2）', () => {
+  it('title 属性を読み取る', () => {
+    const data = parse([
+      ':::custom-map{filename="plan.svg" title="現場見取り図"}',
+      '',
+      '- x=1 y=2',
+      ':::',
+    ].join('\n'))!
+    expect(data.title).toBe('現場見取り図')
+  })
+
+  it('title 属性が無ければ空文字（後方互換）', () => {
+    const data = parse([':::custom-map{filename="plan.svg"}', '', '- x=1 y=2', ':::'].join('\n'))!
+    expect(data.title).toBe('')
+  })
+})

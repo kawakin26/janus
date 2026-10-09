@@ -248,6 +248,8 @@ export function buildMapData(node: ContainerDirective): MapData {
     restore: toNumber(attr('restore'), 15),
     rotate: normalizeRotate(toNumber(attr('rotate'), 0)),
     link: attr('link') ?? '',
+    // 属性が無ければ空文字へフォールバック（title 未指定の既存記法を壊さない後方互換）。
+    title: attr('title') ?? '',
     pinSize: clamp(toNumber(attr('pinSize'), PIN_SIZE_DEFAULT), PIN_SIZE_MIN, PIN_SIZE_MAX),
     labelSize: clamp(toNumber(attr('labelSize'), LABEL_SIZE_DEFAULT), LABEL_SIZE_MIN, LABEL_SIZE_MAX),
     markers,

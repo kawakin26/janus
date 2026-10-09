@@ -110,6 +110,7 @@ function emptyMapData(): MapData {
     restore: 15,
     rotate: 0,
     link: '',
+    title: '',
     pinSize: 12,
     labelSize: 12,
     markers: [],
@@ -134,9 +135,10 @@ function PageEditPage() {
 
   // マップ GUI 編集の状態。mapEditing が null でなければエディタを開いている。
   // blockIndex が null のときは本文末尾へ新規ブロックを追加するモード。
-  const [mapEditing, setMapEditing] = useState<{ blockIndex: number | null; data: MapData } | null>(
-    null,
-  )
+  // blockNumber は見出しのフォールバック「マップ N」専用の表示番号で、開いた瞬間に固定する。
+  const [mapEditing, setMapEditing] = useState<
+    { blockIndex: number | null; blockNumber: number; data: MapData } | null
+  >(null)
   const [mapEditError, setMapEditError] = useState<string | null>(null)
 
   // drawio GUI 編集の状態。drawioEditing が null でなければ embed iframe を開いている。
@@ -161,8 +163,23 @@ function PageEditPage() {
   // 排除し、表セル編集時のキャレット/編集ボックスの飛び（問題2）を実質回避するため（案A）。
   const [isDrawioFullscreen, setIsDrawioFullscreen] = useState(false)
 
-  // 本文中の custom-map ブロック数（導線の出し分けに使う）。
-  const customMapBlockCount = findCustomMapBlocks(body).length
+  // 本文中の custom-map ブロックの範囲（導線の出し分け・編集ボタンのラベル解決に使う）。
+  // 件数とラベル解決が同一スナップショットを見るよう、findCustomMapBlocks は 1 回だけ呼ぶ。
+  const customMapBlocks = findCustomMapBlocks(body)
+  const customMapBlockCount = customMapBlocks.length
+
+  /**
+   * index 番目のブロックの編集ボタン表示名を返す。
+   * title があれば「〈title〉」、無ければ/パース不可なら「マップ N」（N は 1 始まり）。
+   */
+  const mapBlockLabel = (index: number): string => {
+    const block = customMapBlocks[index]
+    const fallback = `マップ ${index + 1}`
+    if (!block) return fallback
+    const data = parseCustomMapBlock(body.slice(block.start, block.end))
+    const title = data?.title?.trim()
+    return title ? title : fallback
+  }
 
   // 本文中の drawio ブロック数（導線の出し分けに使う）。
   const drawioBlockCount = findDrawioBlocks(body).length
@@ -178,13 +195,17 @@ function PageEditPage() {
       setMapEditError('このマップブロックを読み込めませんでした。')
       return
     }
-    setMapEditing({ blockIndex, data })
+    // 既存ブロックの表示番号は blockIndex + 1 に固定する。
+    setMapEditing({ blockIndex, blockNumber: blockIndex + 1, data })
   }
 
   // 新規マップブロックを追加するモードで開く。
   const openNewMapBlock = () => {
     setMapEditError(null)
-    setMapEditing({ blockIndex: null, data: emptyMapData() })
+    // 新規は本文末尾へ追記するため、開いた時点のブロック数 + 1 を表示番号に固定する
+    // （モーダル表示中は body 不変なので、保存で実際に付く末尾番号と一致する）。
+    const blockNumber = findCustomMapBlocks(body).length + 1
+    setMapEditing({ blockIndex: null, blockNumber, data: emptyMapData() })
   }
 
   // モーダルの「保存して閉じる」。モーダルが返す next:MapData を本文へ反映する。
@@ -512,7 +533,7 @@ function PageEditPage() {
                 disabled={mapEditing !== null}
                 className={BUTTON_NORMAL_CLASS}
               >
-                マップ {i + 1} を編集
+                {`${mapBlockLabel(i)} を編集`}
               </button>
             ))}
           </div>
@@ -612,6 +633,7 @@ function PageEditPage() {
           mapData={mapEditing.data}
           onSave={handleMapSave}
           onDiscard={handleMapDiscard}
+          blockNumber={mapEditing.blockNumber}
         />
       )}
     </AppLayout>

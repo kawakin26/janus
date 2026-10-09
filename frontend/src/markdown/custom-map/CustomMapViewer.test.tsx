@@ -22,6 +22,7 @@ const mapData: MapData = {
   restore: 15,
   rotate: 0,
   link: '',
+  title: '',
   pinSize: 12,
   labelSize: 12,
   markers: [
@@ -167,6 +168,35 @@ describe('CustomMapViewer', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'マーカー詳細' })).not.toBeInTheDocument())
     // マップビューは残る（要件3 回帰）。
     expect(screen.getByRole('dialog', { name: 'マップビューア' })).toBeInTheDocument()
+  })
+
+  it('title があれば開いたモーダル内にタイトル見出しを表示する（作業2）', async () => {
+    const user = userEvent.setup()
+    const storage = createStubStorage({ resolveAssetUrl: async () => 'https://cdn/plan.png' })
+    render(
+      <StorageProvider client={storage}>
+        <MemoryRouter>
+          <AuthProvider>
+            <CustomMapViewer mapData={{ ...mapData, title: '現場図' }} />
+          </AuthProvider>
+        </MemoryRouter>
+      </StorageProvider>,
+    )
+    // 本文側の開くボタンは link（既定文言）のままで、タイトルは近傍に出ない。
+    expect(screen.getByRole('button', { name: 'マップを開く' })).toBeInTheDocument()
+    expect(screen.queryByTestId('map-viewer-title')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'マップを開く' }))
+    const dialog = await screen.findByRole('dialog', { name: 'マップビューア' })
+    expect(within(dialog).getByTestId('map-viewer-title')).toHaveTextContent('現場図')
+  })
+
+  it('title が空ならモーダル内にタイトル見出しを出さない（作業2）', async () => {
+    const user = userEvent.setup()
+    renderViewer(async () => 'https://cdn/plan.png')
+    await user.click(screen.getByRole('button', { name: 'マップを開く' }))
+    await screen.findByRole('dialog', { name: 'マップビューア' })
+    expect(screen.queryByTestId('map-viewer-title')).toBeNull()
   })
 
   it('点滅 keyframes は minimized 用に opacity:0 の滞留区間を持ち hasDetail 用の薄い点滅を別クラスで残す', async () => {

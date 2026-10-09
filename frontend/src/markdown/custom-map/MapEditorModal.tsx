@@ -48,6 +48,12 @@ export interface MapEditorModalProps {
   mapData: MapData
   onSave: (next: MapData) => void
   onDiscard: () => void
+  /**
+   * 編集対象ブロックの表示番号（1 始まり）。見出しのフォールバック「マップ N」に使う。
+   * 親（PageEditPage）がモーダルを開いた瞬間に確定した値を渡す（既存ブロックは blockIndex+1、
+   * 新規追加は開いた時点のブロック数+1）。モーダル表示中は固定され、再算出に依存しない。
+   */
+  blockNumber: number
 }
 
 // マーカー既定色（記法ドメイン定数。テーマトークンではない）。
@@ -67,6 +73,7 @@ function roundCoord(v: number): number {
  */
 function deepCloneMapData(m: MapData): MapData {
   return {
+    // title はプリミティブ文字列なのでスプレッド `...m` 経由でそのまま複製される。
     ...m,
     assetRef: { ...m.assetRef, specifiers: m.assetRef.specifiers.map((s) => ({ ...s })) },
     markers: m.markers.map((mk) => ({
@@ -86,7 +93,7 @@ function assetToSpecifiers(asset: Asset): AssetRef['specifiers'] {
   return []
 }
 
-function MapEditorModal({ mapData, onSave, onDiscard }: MapEditorModalProps) {
+function MapEditorModal({ mapData, onSave, onDiscard, blockNumber }: MapEditorModalProps) {
   const storage = useStorage()
   const handleError = usePageError()
 
@@ -199,8 +206,14 @@ function MapEditorModal({ mapData, onSave, onDiscard }: MapEditorModalProps) {
   // 追加したマーカー（末尾）を選択するため、最新の markers 長を鏡写しする。
   const markerCountRef = useRef(draft.markers.length)
   useEffect(() => {
+    // 既存: handleAddMarker が newIndex = markerCountRef.current を読んで setSelected するため、
+    // 最新件数を鏡写しする（この代入は削除しない。選択ロジックが依存する）。
     markerCountRef.current = draft.markers.length
-  }, [draft.markers.length])
+    // 件数変化で markerInnerRefs の要素構成が変わる。新規要素のインライン transform は
+    // scale=1 固定のため、ここで現在の view.scale に基づく 1/scale 補正を全マーカーへ再適用する
+    // （未適用だと新規マーカーだけ scale 倍に見える不具合になる）。
+    applyTransform()
+  }, [draft.markers.length, applyTransform])
 
   const handleAddMarker = useCallback((pos: { x: number; y: number }) => {
     const newIndex = markerCountRef.current
@@ -458,6 +471,10 @@ function MapEditorModal({ mapData, onSave, onDiscard }: MapEditorModalProps) {
 
   const selectedMarker = selected !== null ? draft.markers[selected] : undefined
 
+  // 編集中マップの識別見出し。title を優先し、空（空白のみ含む）なら「マップ N」へフォールバック。
+  // draft.title を使うことで、入力欄での編集が見出しへ即時に追従する。
+  const displayTitle = draft.title.trim() !== '' ? draft.title : `マップ ${blockNumber}`
+
   // マーカーの選択/ドラッグ共通ハンドラ（ピン・ラベル双方に付ける）。
   const markerInteraction = (i: number) => ({
     onPointerDown: onMarkerPointerDown(i),
@@ -582,6 +599,10 @@ function MapEditorModal({ mapData, onSave, onDiscard }: MapEditorModalProps) {
 
         {/* 右ペイン: 編集フィールド（排他） */}
         <aside className="flex w-[300px] shrink-0 flex-col gap-3 overflow-auto border-l border-border p-3">
+          {/* 編集中マップの識別見出し（title 優先、空なら「マップ N」）。 */}
+          <h2 className="text-base font-bold text-fg" data-testid="map-editor-heading">
+            {displayTitle} を編集
+          </h2>
           {error !== null && (
             <p role="alert" className="text-danger">
               {error}
@@ -676,6 +697,15 @@ function MapEditorModal({ mapData, onSave, onDiscard }: MapEditorModalProps) {
                       labelSize: clamp(Number(e.target.value), LABEL_SIZE_MIN, LABEL_SIZE_MAX),
                     }))
                   }
+                />
+              </div>
+              <div className={FIELD_CLASS}>
+                <label htmlFor="map-editor-title">タイトル</label>
+                <input
+                  id="map-editor-title"
+                  type="text"
+                  value={draft.title}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, title: e.target.value }))}
                 />
               </div>
               <div className={FIELD_CLASS}>

@@ -60,6 +60,7 @@ function baseMapData(overrides: Partial<MapData> = {}): MapData {
     restore: 15,
     rotate: 0,
     link: '',
+    title: '',
     pinSize: 12,
     labelSize: 12,
     markers: [],
@@ -99,6 +100,7 @@ function stubViewportRect(viewport: HTMLElement): void {
 function renderModal(
   mapData: MapData,
   overrides: Parameters<typeof createStubStorage>[0] = {},
+  blockNumber = 1,
 ) {
   const onSave = vi.fn()
   const onDiscard = vi.fn()
@@ -113,7 +115,12 @@ function renderModal(
     <StorageProvider client={client}>
       <AuthProvider>
         <MemoryRouter>
-          <MapEditorModal mapData={mapData} onSave={onSave} onDiscard={onDiscard} />
+          <MapEditorModal
+            mapData={mapData}
+            onSave={onSave}
+            onDiscard={onDiscard}
+            blockNumber={blockNumber}
+          />
         </MemoryRouter>
       </AuthProvider>
     </StorageProvider>,
@@ -129,6 +136,18 @@ async function setupViewport(): Promise<HTMLElement> {
   const img = viewport.querySelector('img')
   if (img) act(() => img.dispatchEvent(new Event('load')))
   return viewport
+}
+
+/** モーダルを描画し viewport の矩形スタブ適用＋画像ロードまで済ませて viewport を返す。 */
+async function renderModalAndSetup(
+  mapData: MapData,
+): Promise<{ viewport: HTMLElement } & ReturnType<typeof renderModal>> {
+  const rendered = renderModal(mapData)
+  const viewport = await screen.findByTestId('map-editor-viewport')
+  stubViewportRect(viewport)
+  const img = viewport.querySelector('img')
+  if (img) act(() => img.dispatchEvent(new Event('load')))
+  return { viewport, ...rendered }
 }
 
 function lastSave(onSave: ReturnType<typeof vi.fn>): MapData {
@@ -196,6 +215,83 @@ describe('MapEditorModal', () => {
     const saved = lastSave(onSave)
     expect(saved.markers).toHaveLength(1)
     expect(saved.markers[0]).toMatchObject({ x: 50, y: 50 })
+  })
+
+  it('新規マーカー追加直後に内側 transform が 1/scale 補正を含む（作業1）', async () => {
+    // 本テストだけ画像自然サイズを 400×200 へ張り替え、viewport 200×100 と合わせて
+    // fitScale = min(200/400, 100/200) = 0.5 を作る（逆補正 1/0.5 = 2）。
+    // defineProperty 由来の getter は afterEach では戻らないため try/finally で必ず復元する。
+    Object.defineProperty(HTMLImageElement.prototype, 'naturalWidth', {
+      configurable: true,
+      get: () => 400,
+    })
+    Object.defineProperty(HTMLImageElement.prototype, 'naturalHeight', {
+      configurable: true,
+      get: () => 200,
+    })
+    try {
+      const viewport = (await renderModalAndSetup(baseMapData())).viewport
+      vi.useFakeTimers()
+
+      // 長押しでマーカー 1 件追加（scale=0.5 が確定した状態）。
+      act(() => {
+        viewport.dispatchEvent(
+          new PointerEvent('pointerdown', { pointerId: 1, button: 0, clientX: 100, clientY: 50, bubbles: true }),
+        )
+      })
+      act(() => {
+        vi.advanceTimersByTime(THRESHOLD)
+      })
+      act(() => {
+        viewport.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: 100, clientY: 50, bubbles: true }))
+      })
+      vi.useRealTimers()
+
+      // 内側要素（markerInnerRefs が指す = data-marker-pin の親 div）の transform に
+      // 1/scale = 2 の補正が当たっていること。回帰前は scale(1) のまま。
+      const pin = viewport.querySelector('[data-marker-pin="true"]') as HTMLElement
+      const inner = pin.parentElement as HTMLElement
+      expect(inner.style.transform).toContain('scale(2)')
+    } finally {
+      stubImageNaturalSize() // 200×100 へ必ず復元（後続テスト汚染を防ぐ）
+    }
+  })
+
+  it('回転が効いた状態の新規マーカー追加でも rotate(-90deg) と scale(2) を含む（作業1）', async () => {
+    Object.defineProperty(HTMLImageElement.prototype, 'naturalWidth', {
+      configurable: true,
+      get: () => 400,
+    })
+    Object.defineProperty(HTMLImageElement.prototype, 'naturalHeight', {
+      configurable: true,
+      get: () => 200,
+    })
+    try {
+      const viewport = (await renderModalAndSetup(baseMapData({ rotate: 90 }))).viewport
+      vi.useFakeTimers()
+      act(() => {
+        viewport.dispatchEvent(
+          new PointerEvent('pointerdown', { pointerId: 1, button: 0, clientX: 100, clientY: 50, bubbles: true }),
+        )
+      })
+      act(() => {
+        vi.advanceTimersByTime(THRESHOLD)
+      })
+      act(() => {
+        viewport.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: 100, clientY: 50, bubbles: true }))
+      })
+      vi.useRealTimers()
+
+      // rotate=90 では computeFitView が自然サイズを入替えて評価するため
+      // fitScale = min(200/200, 100/400) = 0.25 → 逆補正 1/0.25 = 4（割り切れる）。
+      // 回帰前は新規マーカーの transform が scale(1) のまま残る。
+      const pin = viewport.querySelector('[data-marker-pin="true"]') as HTMLElement
+      const inner = pin.parentElement as HTMLElement
+      expect(inner.style.transform).toContain('rotate(-90deg)')
+      expect(inner.style.transform).toContain('scale(4)')
+    } finally {
+      stubImageNaturalSize()
+    }
   })
 
   it('移動（ドラッグ）した場合はパン扱いで追加されない', async () => {
@@ -526,6 +622,33 @@ describe('MapEditorModal', () => {
 
     expect(await screen.findByRole('button', { name: 'カメラで撮影' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'ファイルを選択' })).toBeInTheDocument()
+  })
+
+  it('タイトル入力の値が保存の MapData.title に反映される（作業2）', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup()
+    const { onSave } = renderModal(baseMapData())
+    await setupViewport()
+
+    // タイトル入力は詳細設定（details）内にある。
+    fireEvent.click(screen.getByText('詳細設定'))
+    const titleInput = screen.getByLabelText('タイトル')
+    await user.type(titleInput, '現場図')
+
+    fireEvent.click(screen.getByRole('button', { name: '保存して閉じる' }))
+    expect(lastSave(onSave).title).toBe('現場図')
+  })
+
+  it('見出しは title が空なら「マップ N」、title があればその値で「〈title〉を編集」になる（作業2）', async () => {
+    // title 空＋blockNumber=2 → フォールバック「マップ 2 を編集」。
+    const empty = renderModal(baseMapData(), {}, 2)
+    await screen.findByTestId('map-editor-viewport')
+    expect(screen.getByTestId('map-editor-heading')).toHaveTextContent('マップ 2 を編集')
+    empty.unmount()
+
+    // title あり → 「現場図 を編集」。
+    renderModal(baseMapData({ title: '現場図' }), {}, 2)
+    await screen.findAllByTestId('map-editor-viewport')
+    expect(screen.getByTestId('map-editor-heading')).toHaveTextContent('現場図 を編集')
   })
 
   it('マップ未選択ではプレースホルダを表示する', async () => {

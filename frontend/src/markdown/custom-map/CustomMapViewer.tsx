@@ -369,6 +369,14 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
           ×
         </button>
 
+        {/* 編集で付けた識別名（title）を画像上部に表示する。空（空白のみ含む）なら出さない。
+            どの解決状態でも「どのマップを開いているか」が分かるよう常に表示する。 */}
+        {mapData.title.trim() !== '' && (
+          <h2 className="mb-2 text-base font-bold text-fg" data-testid="map-viewer-title">
+            {mapData.title}
+          </h2>
+        )}
+
         {status === 'error' ? (
           <p role="alert" style={{ width: 'min(80vw, 640px)', padding: '8px 4px', textAlign: 'center' }}>
             {errorMessage}

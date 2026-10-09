@@ -40,6 +40,7 @@ function makeMapData(overrides: Partial<MapData> = {}): MapData {
     restore: 15,
     rotate: 0,
     link: '',
+    title: '',
     pinSize: 12,
     labelSize: 12,
     markers: [],
@@ -221,5 +222,52 @@ describe('serializeMapData: 往復無損失（T-MAP）', () => {
     const original = makeMapData()
     const result = roundTrip(original)
     expect(result).toEqual(original)
+  })
+
+  it('(作業2) title ありの往復で .title が一致し、出力に title="..." を含む', () => {
+    const original = makeMapData({
+      assetRef: { specifiers: [{ kind: 'filename', value: 'plan.svg' }] },
+      title: '現場見取り図',
+    })
+    const text = serializeMapData(original)
+    expect(text).toContain('title="現場見取り図"')
+    expect(roundTrip(original).title).toBe('現場見取り図')
+  })
+
+  it('(作業2) title が既定（空文字）のとき出力に title= を含まない', () => {
+    const text = serializeMapData(makeMapData({ title: '' }))
+    expect(text).not.toContain('title=')
+  })
+
+  it('(作業2) title に特殊文字（/ : |・改行）を含む往復', () => {
+    // link の特殊文字テストと同じ値域に合わせる。改行は `|` 表現で読み戻る。
+    const original = makeMapData({
+      assetRef: { specifiers: [{ kind: 'filename', value: 'plan.svg' }] },
+      title: 'A/B : C|D',
+    })
+    expect(roundTrip(original).title).toBe('A/B : C|D')
+
+    const withNewline = makeMapData({
+      assetRef: { specifiers: [{ kind: 'filename', value: 'plan.svg' }] },
+      title: '一行目\n二行目',
+    })
+    const text = serializeMapData(withNewline)
+    expect(text).toContain('title="一行目|二行目"')
+    expect(roundTrip(withNewline).title).toBe('一行目|二行目')
+  })
+
+  it('(作業2・後方互換) title 無しの既存記法を parse→serialize しても title を出力せず他が不変', () => {
+    const source = [
+      ':::custom-map{filename="plan.svg" cx="30" link="図面を開く"}',
+      '',
+      '- x=10 y=20 label="入口"',
+      ':::',
+    ].join('\n')
+    const parsed = parse(source)!
+    expect(parsed.title).toBe('')
+    const reserialized = serializeMapData(parsed)
+    expect(reserialized).not.toContain('title=')
+    // title 以外のラウンドトリップが保たれる。
+    expect(roundTrip(parsed)).toEqual(parsed)
   })
 })

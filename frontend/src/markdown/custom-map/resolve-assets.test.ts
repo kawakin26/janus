@@ -18,6 +18,7 @@ const baseMap: MapData = {
   restore: 15,
   rotate: 0,
   link: '',
+  title: '',
   pinSize: 12,
   labelSize: 12,
   markers: [],
