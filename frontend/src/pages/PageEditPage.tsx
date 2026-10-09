@@ -112,6 +112,16 @@ const BUTTON_SUCCESS_CLASS =
 const BUTTON_WARNING_CLASS =
   BUTTON_BASE_CLASS +
   ' bg-warning text-fg dark:text-primary-contrast font-semibold hover:bg-warning/90'
+// 淡色塗り（副アクション）: マップ編集・描画編集。追加ボタンの濃いベタ塗りに対し、
+// 既存トークン（success/warning）の不透明度バリアントで淡い面＋同色相の濃い文字にする。
+// 独自色・新規トークンは追加しない。success/warning はダーク時にトークン側で上書きされるため
+// 淡色も自動で追従する。副アクションなので font-semibold は付けない。
+const BUTTON_SUCCESS_SOFT_CLASS =
+  BUTTON_BASE_CLASS +
+  ' border border-success/30 bg-success/15 text-success hover:bg-success/25'
+const BUTTON_WARNING_SOFT_CLASS =
+  BUTTON_BASE_CLASS +
+  ' border border-warning/30 bg-warning/15 text-warning hover:bg-warning/25'
 const ALERT_ERROR_CLASS = 'rounded px-3 py-2 bg-danger/10 text-danger'
 
 /** 新規マップブロック（マーカーなし・参照なし）の初期 MapData。 */
@@ -574,21 +584,25 @@ function PageEditPage() {
           {/* 導線は常に表示する。編集はモーダル（MapEditorModal）で開くため、ここに
               インライン展開は持たない。編集セッション中（anyEditing）は『ページを保存』と
               あわせて本文を書き換える操作（追加・セレクト・編集）を全て無効化する（B-6）。
-              追加・編集ボタンは success（緑）で色分けし、アイコン（MapIcon）をテキスト左へ
-              aria-hidden で添える（アクセシブル名はテキスト「マップを追加」「マップを編集」を維持）。
+              追加ボタンは success（緑）の濃いベタ塗り＋アイコン（MapIcon）をテキスト左へ
+              aria-hidden で添える（アクセシブル名「マップを追加」）。編集ボタンはアイコン無し・
+              success の淡色塗り（副アクション）でラベルは「マップ編集」。
               <select> は無着色（base 体裁のまま）。 */}
-          <div className="flex items-center gap-2">
+          {/* 追加ボタンに固定幅（min-w-[8.5rem]）を与え、マップ行と描画行で
+              追加ボタン列の幅＝セレクトの左端を縦に揃える。追加ボタンとセレクト群の間は
+              gap-4 で少し離し、セレクトと編集ボタンはセットとして近接させる。 */}
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={openNewMapBlock}
               disabled={anyEditing}
-              className={BUTTON_SUCCESS_CLASS + ' gap-1.5'}
+              className={BUTTON_SUCCESS_CLASS + ' justify-start min-w-[8.5rem] gap-1.5'}
             >
               <MapIcon size={16} aria-hidden="true" focusable={false} />
               マップを追加
             </button>
             {customMapBlockCount > 0 && (
-              <>
+              <div className="flex items-center gap-2">
                 <select
                   aria-label="編集するマップを選択"
                   value={String(effectiveMapSelectIndex)}
@@ -605,35 +619,37 @@ function PageEditPage() {
                   type="button"
                   onClick={() => openMapBlock(effectiveMapSelectIndex)}
                   disabled={anyEditing}
-                  className={BUTTON_SUCCESS_CLASS + ' gap-1.5'}
+                  className={BUTTON_SUCCESS_SOFT_CLASS}
                 >
-                  <MapIcon size={16} aria-hidden="true" focusable={false} />
-                  マップを編集
+                  マップ編集
                 </button>
-              </>
+              </div>
             )}
           </div>
         </section>
 
         <section className="flex flex-col gap-1.5" aria-label="drawio 描画 編集">
-          {/* 追加・編集ボタンは warning（黄）で色分けし、アイコン（PenTool）をテキスト左へ
-              aria-hidden で添える（アクセシブル名はテキスト「描画を追加」「描画を編集」を維持）。
+          {/* 追加ボタンは warning（黄）の濃いベタ塗り＋アイコン（PenTool）をテキスト左へ
+              aria-hidden で添える（アクセシブル名「描画を追加」）。編集ボタンはアイコン無し・
+              warning の淡色塗り（副アクション）でラベルは「描画編集」。
               編集セッション中（anyEditing）は追加・セレクト・編集を全て無効化する（finding#1/B-6）。
               別の描画を開くと現在の iframe が exit/modified ガードを通らず直接差し替えられ、
               autosave 到達前の未反映 XML を取りこぼすため、先に「描画編集を閉じる」で確定させる。
               <select> は無着色（base 体裁のまま）。 */}
-          <div className="flex items-center gap-2">
+          {/* マップ行と同じ固定幅（min-w-[8.5rem]）＋gap-4 で、描画行のセレクト左端を
+              マップ行と縦に揃える。 */}
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={openNewDrawioBlock}
               disabled={anyEditing}
-              className={BUTTON_WARNING_CLASS + ' gap-1.5'}
+              className={BUTTON_WARNING_CLASS + ' justify-start min-w-[8.5rem] gap-1.5'}
             >
               <PenTool size={16} aria-hidden="true" focusable={false} />
               描画を追加
             </button>
             {drawioBlockCount > 0 && (
-              <>
+              <div className="flex items-center gap-2">
                 <select
                   aria-label="編集する描画を選択"
                   value={String(effectiveDrawioSelectIndex)}
@@ -650,12 +666,11 @@ function PageEditPage() {
                   type="button"
                   onClick={() => openDrawioBlock(effectiveDrawioSelectIndex)}
                   disabled={anyEditing}
-                  className={BUTTON_WARNING_CLASS + ' gap-1.5'}
+                  className={BUTTON_WARNING_SOFT_CLASS}
                 >
-                  <PenTool size={16} aria-hidden="true" focusable={false} />
-                  描画を編集
+                  描画編集
                 </button>
-              </>
+              </div>
             )}
           </div>
           {drawioEditing !== null && (

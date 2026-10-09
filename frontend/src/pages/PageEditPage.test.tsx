@@ -307,7 +307,7 @@ describe('PageEditPage', () => {
     const user = userEvent.setup()
     // 2 番目の既存描画（index 1）をセレクトで選び「描画を編集」で開く。
     await user.selectOptions(screen.getByRole('combobox', { name: '編集する描画を選択' }), '1')
-    await user.click(screen.getByRole('button', { name: '描画を編集' }))
+    await user.click(screen.getByRole('button', { name: '描画編集' }))
     await screen.findByTitle('drawio 描画エディタ')
 
     // save と同時に exit:true を受信（「ファイル→保存」して閉じる操作）。
@@ -429,17 +429,17 @@ describe('PageEditPage', () => {
     // セッション開始前は追加・セレクト・編集とも有効。
     expect(screen.getByRole('button', { name: '描画を追加' })).toBeEnabled()
     expect(screen.getByRole('combobox', { name: '編集する描画を選択' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '描画を編集' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '描画編集' })).toBeEnabled()
 
     // 「描画を編集」で全画面オーバーレイが開く。全画面を解除して背景ボタンを操作可能にする。
-    await user.click(screen.getByRole('button', { name: '描画を編集' }))
+    await user.click(screen.getByRole('button', { name: '描画編集' }))
     await screen.findByTitle('drawio 描画エディタ')
     await user.click(screen.getByRole('button', { name: '全画面を解除' }))
 
     // active セッション中は追加・セレクト・編集とも無効化され、別セッションへ切り替えられない。
     expect(screen.getByRole('button', { name: '描画を追加' })).toBeDisabled()
     expect(screen.getByRole('combobox', { name: '編集する描画を選択' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '描画を編集' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '描画編集' })).toBeDisabled()
 
     // 「描画編集を閉じる」→ export 応答（最新 XML）回収後に閉じると再び有効化される。
     await user.click(screen.getByRole('button', { name: '描画編集を閉じる' }))
@@ -449,7 +449,7 @@ describe('PageEditPage', () => {
     })
     expect(screen.getByRole('button', { name: '描画を追加' })).toBeEnabled()
     expect(screen.getByRole('combobox', { name: '編集する描画を選択' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '描画を編集' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '描画編集' })).toBeEnabled()
   })
 
   it('「マップを追加」でマップ編集モーダル（dialog, aria-label=マップ編集）がフォーム外に開く', async () => {
@@ -641,7 +641,7 @@ describe('PageEditPage', () => {
 
     const user = userEvent.setup()
     await screen.findByRole('combobox', { name: '編集するマップを選択' })
-    await user.click(screen.getByRole('button', { name: 'マップを編集' }))
+    await user.click(screen.getByRole('button', { name: 'マップ編集' }))
     const dialog = await screen.findByRole('dialog', { name: 'マップ編集' })
     expect(within(dialog).getByTestId('map-editor-heading')).toHaveTextContent('現場図 を編集')
   })
@@ -664,8 +664,8 @@ describe('PageEditPage', () => {
     // セレクト・編集ボタンは非表示。
     expect(screen.queryByRole('combobox', { name: '編集するマップを選択' })).toBeNull()
     expect(screen.queryByRole('combobox', { name: '編集する描画を選択' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'マップを編集' })).toBeNull()
-    expect(screen.queryByRole('button', { name: '描画を編集' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'マップ編集' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '描画編集' })).toBeNull()
   })
 
   it('対象 1 個のときセレクトと編集ボタンが表示され、唯一の対象を編集で開ける（B-3）', async () => {
@@ -686,7 +686,7 @@ describe('PageEditPage', () => {
     expect(within(select).getByRole('option', { name: '描画 1' })).toBeInTheDocument()
 
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: '描画を編集' }))
+    await user.click(screen.getByRole('button', { name: '描画編集' }))
     expect(await screen.findByTitle('drawio 描画エディタ')).toBeInTheDocument()
   })
 
@@ -712,7 +712,7 @@ describe('PageEditPage', () => {
 
     const user = userEvent.setup()
     await user.selectOptions(select, '1')
-    await user.click(screen.getByRole('button', { name: '描画を編集' }))
+    await user.click(screen.getByRole('button', { name: '描画編集' }))
     await screen.findByTitle('drawio 描画エディタ')
     // 2 番目のタイトルが初期値として入っていること（= 2 番目のブロックが開いた）。
     const dialog = screen.getByRole('dialog', { name: 'drawio 描画エディタ（全画面）' })
@@ -826,7 +826,7 @@ describe('PageEditPage', () => {
     const user = userEvent.setup()
     // 2 番目を開いて title を変更する。
     await user.selectOptions(screen.getByRole('combobox', { name: '編集する描画を選択' }), '1')
-    await user.click(screen.getByRole('button', { name: '描画を編集' }))
+    await user.click(screen.getByRole('button', { name: '描画編集' }))
     await screen.findByTitle('drawio 描画エディタ')
     const titleInput = within(
       screen.getByRole('dialog', { name: 'drawio 描画エディタ（全画面）' }),
@@ -874,13 +874,13 @@ describe('PageEditPage', () => {
     // マップモーダル中は両系統の追加・セレクト・編集が無効化される。
     expect(screen.getByRole('button', { name: 'マップを追加' })).toBeDisabled()
     expect(screen.getByRole('combobox', { name: '編集するマップを選択' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'マップを編集' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'マップ編集' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '描画を追加' })).toBeDisabled()
     expect(screen.getByRole('combobox', { name: '編集する描画を選択' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '描画を編集' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '描画編集' })).toBeDisabled()
   })
 
-  it('追加・編集ボタンにアイコンが付いても aria-hidden でアクセシブル名はテキストのまま（A-2）', async () => {
+  it('追加ボタンはアイコン付き（aria-hidden でアクセシブル名はテキストのまま）、編集ボタンはアイコン無しの淡色塗り（A-2）', async () => {
     const client = createStubStorage({
       currentUser: vi.fn(async () => sampleUser),
       getPage: vi.fn(async () =>
@@ -900,12 +900,19 @@ describe('PageEditPage', () => {
     })
     // アクセシブル名はテキストのまま引ける（アイコンは aria-hidden で名前に寄与しない）。
     const addMap = screen.getByRole('button', { name: 'マップを追加' })
-    const editMap = screen.getByRole('button', { name: 'マップを編集' })
+    const editMap = screen.getByRole('button', { name: 'マップ編集' })
     const addDrawio = screen.getByRole('button', { name: '描画を追加' })
-    const editDrawio = screen.getByRole('button', { name: '描画を編集' })
-    // アイコン SVG が aria-hidden で描画されている。
-    for (const btn of [addMap, editMap, addDrawio, editDrawio]) {
+    const editDrawio = screen.getByRole('button', { name: '描画編集' })
+    // 追加ボタンにはアイコン SVG が aria-hidden で描画されている。
+    for (const btn of [addMap, addDrawio]) {
       expect(btn.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
     }
+    // 編集ボタンはアイコン無し・淡色塗り（副アクション）。
+    expect(editMap.querySelector('svg')).toBeNull()
+    expect(editDrawio.querySelector('svg')).toBeNull()
+    expect(editMap.className).toContain('bg-success/15')
+    expect(editMap.className).toContain('text-success')
+    expect(editDrawio.className).toContain('bg-warning/15')
+    expect(editDrawio.className).toContain('text-warning')
   })
 })
