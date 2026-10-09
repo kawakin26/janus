@@ -588,15 +588,16 @@ function PageEditPage() {
               aria-hidden で添える（アクセシブル名「マップを追加」）。編集ボタンはアイコン無し・
               success の淡色塗り（副アクション）でラベルは「マップ編集」。
               <select> は無着色（base 体裁のまま）。 */}
-          {/* 追加ボタンに固定幅（min-w-[8.5rem]）を与え、マップ行と描画行で
-              追加ボタン列の幅＝セレクトの左端を縦に揃える。追加ボタンとセレクト群の間は
-              gap-4 で少し離し、セレクトと編集ボタンはセットとして近接させる。 */}
-          <div className="flex items-center gap-4">
+          {/* 追加ボタンに固定幅（w-[9rem]）を与え、マップ行と描画行で追加ボタン列の幅＝
+              セレクトの左端を縦に確実に揃える（min-w は内容超過で実幅がぶれるため w で固定）。
+              追加ボタンとセレクト群の間は gap-12（3rem）で大きく離し、セレクト＋編集ボタンが
+              「編集側の対」であって追加ボタンとは無関係であることを視覚的に示す。 */}
+          <div className="flex items-center gap-12">
             <button
               type="button"
               onClick={openNewMapBlock}
               disabled={anyEditing}
-              className={BUTTON_SUCCESS_CLASS + ' justify-start min-w-[8.5rem] gap-1.5'}
+              className={BUTTON_SUCCESS_CLASS + ' justify-start w-[9rem] gap-1.5'}
             >
               <MapIcon size={16} aria-hidden="true" focusable={false} />
               マップを追加
@@ -636,14 +637,14 @@ function PageEditPage() {
               別の描画を開くと現在の iframe が exit/modified ガードを通らず直接差し替えられ、
               autosave 到達前の未反映 XML を取りこぼすため、先に「描画編集を閉じる」で確定させる。
               <select> は無着色（base 体裁のまま）。 */}
-          {/* マップ行と同じ固定幅（min-w-[8.5rem]）＋gap-4 で、描画行のセレクト左端を
-              マップ行と縦に揃える。 */}
-          <div className="flex items-center gap-4">
+          {/* マップ行と同じ固定幅（w-[9rem]）＋gap-12 で、描画行のセレクト左端を
+              マップ行と縦に揃え、追加ボタンとセレクト群を大きく離す。 */}
+          <div className="flex items-center gap-12">
             <button
               type="button"
               onClick={openNewDrawioBlock}
               disabled={anyEditing}
-              className={BUTTON_WARNING_CLASS + ' justify-start min-w-[8.5rem] gap-1.5'}
+              className={BUTTON_WARNING_CLASS + ' justify-start w-[9rem] gap-1.5'}
             >
               <PenTool size={16} aria-hidden="true" focusable={false} />
               描画を追加
