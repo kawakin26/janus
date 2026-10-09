@@ -94,8 +94,9 @@ describe('AppLayout（非破壊の既存挙動）', () => {
     expect(within(header).getByText('alice')).toBeInTheDocument()
     expect(within(header).getByRole('button', { name: 'ログアウト' })).toBeInTheDocument()
 
-    // グローバルナビ（aria-label="グローバル"）に一覧とアセットの導線がある。
-    const nav = screen.getByRole('navigation', { name: 'グローバル' })
+    // グローバルナビ（aria-label="グローバル"）はヘッダー（banner）内に移動した。
+    // 一覧とアセットの導線がヘッダー内の横並びナビに出る。
+    const nav = within(header).getByRole('navigation', { name: 'グローバル' })
     expect(within(nav).getByRole('link', { name: 'ページ一覧' })).toHaveAttribute('href', '/')
     expect(within(nav).getByRole('link', { name: 'アセットライブラリ' })).toHaveAttribute(
       'href',
@@ -108,8 +109,8 @@ describe('AppLayout（非破壊の既存挙動）', () => {
     const client = loggedInStub()
     renderLayout(client, '/')
 
-    await screen.findByRole('banner')
-    const nav = screen.getByRole('navigation', { name: 'グローバル' })
+    const header = await screen.findByRole('banner')
+    const nav = within(header).getByRole('navigation', { name: 'グローバル' })
     expect(within(nav).getByRole('link', { name: 'ページ一覧' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -247,14 +248,32 @@ describe('AppLayout（狭幅オーバーレイの a11y・design.md §4.3/§10）
 })
 
 describe('AppLayout（ページツリー統合・design §3.10）', () => {
-  it('広幅: グローバルナビ内にページツリー（role="tree"）が描画される', async () => {
+  it('広幅: 常設サイドバー（aria-label="ページツリー"）にページツリー（role="tree"）が描画される', async () => {
     const client = loggedInStub()
     renderLayout(client)
 
     await screen.findByRole('banner')
-    const nav = screen.getByRole('navigation', { name: 'グローバル' })
-    expect(within(nav).getByRole('tree', { name: 'ページ' })).toBeInTheDocument()
-    expect(within(nav).getByText('ページ')).toBeInTheDocument()
+    const sidebar = screen.getByRole('navigation', { name: 'ページツリー' })
+    expect(within(sidebar).getByRole('tree', { name: 'ページ' })).toBeInTheDocument()
+    expect(within(sidebar).getByText('ページ')).toBeInTheDocument()
+  })
+
+  it('広幅: サイドバーにはページツリーのみで NAV_ITEMS リンクが無く、ヘッダー側に 3 リンクがある', async () => {
+    const client = loggedInStub()
+    renderLayout(client)
+
+    const header = await screen.findByRole('banner')
+    const headerNav = within(header).getByRole('navigation', { name: 'グローバル' })
+    // ヘッダー横並びナビに 3 項目が全て出る。
+    expect(within(headerNav).getByRole('link', { name: 'ページ一覧' })).toBeInTheDocument()
+    expect(within(headerNav).getByRole('link', { name: 'アセットライブラリ' })).toBeInTheDocument()
+    expect(within(headerNav).getByRole('link', { name: '設定' })).toBeInTheDocument()
+
+    // 常設サイドバーには NAV_ITEMS リンクが無い（ツリーのみ）。
+    const sidebar = screen.getByRole('navigation', { name: 'ページツリー' })
+    expect(within(sidebar).queryByRole('link', { name: 'ページ一覧' })).toBeNull()
+    expect(within(sidebar).queryByRole('link', { name: 'アセットライブラリ' })).toBeNull()
+    expect(within(sidebar).queryByRole('link', { name: '設定' })).toBeNull()
   })
 
   it('狭幅オーバーレイ: dialog 内にもページツリーが描画される', async () => {

@@ -30,9 +30,9 @@ const NAV_ITEMS: { to: string; label: string }[] = [
   { to: '/settings', label: '設定' },
 ]
 
-// 共通ナビ本体。常設サイドバーとモバイルオーバーレイの双方で使う。
+// グローバル導線 3 項目の縦積みリスト。狭幅オーバーレイで使う。
 // firstItemRef は（オーバーレイ時のみ）開いた直後に最初のナビ項目へフォーカスするための参照。
-function NavItems({
+function NavLinkList({
   pathname,
   onNavigate,
   firstItemRef,
@@ -42,16 +42,59 @@ function NavItems({
   firstItemRef?: React.Ref<HTMLAnchorElement>
 }) {
   return (
-    <>
-      <ul className="flex flex-col gap-1">
-        {NAV_ITEMS.map((item, index) => {
+    <ul className="flex flex-col gap-1">
+      {NAV_ITEMS.map((item, index) => {
+        const active = pathname === item.to
+        return (
+          <li key={item.to}>
+            <Link
+              ref={index === 0 ? firstItemRef : undefined}
+              to={item.to}
+              onClick={onNavigate}
+              aria-current={active ? 'page' : undefined}
+              className={
+                'block rounded px-3 py-1.5 text-sm no-underline ' +
+                'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring ' +
+                (active
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-fg hover:bg-surface')
+              }
+            >
+              {item.label}
+            </Link>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+// ページツリー（§3.10）。区切り + セクションラベル + ツリー本体。
+// 常設サイドバーと狭幅オーバーレイの双方で描画する。
+function PageTreeSection({ onNavigate }: { onNavigate?: () => void }) {
+  return (
+    <div className="mt-3 pt-3 border-t border-border">
+      <p className="text-xs text-fg-muted">ページ</p>
+      <PageTree onNavigate={onNavigate} />
+    </div>
+  )
+}
+
+// ヘッダー横並びナビ（§4.4）。広幅のみ表示（md:flex）し、グローバル導線 3 項目を
+// Janus ロゴの右へ左詰めで横並びに置く。ページツリーは含めない（ツリーはサイドバーに残す）。
+function HeaderNav({ pathname }: { pathname: string }) {
+  return (
+    <nav
+      aria-label="グローバル"
+      className="hidden items-center gap-1 md:flex"
+    >
+      <ul className="flex flex-row items-center gap-1">
+        {NAV_ITEMS.map((item) => {
           const active = pathname === item.to
           return (
             <li key={item.to}>
               <Link
-                ref={index === 0 ? firstItemRef : undefined}
                 to={item.to}
-                onClick={onNavigate}
                 aria-current={active ? 'page' : undefined}
                 className={
                   'block rounded px-3 py-1.5 text-sm no-underline ' +
@@ -67,13 +110,7 @@ function NavItems({
           )
         })}
       </ul>
-      {/* ページツリー（§3.10）。区切り + セクションラベル + ツリー本体を NAV_ITEMS 直下に置く。
-          NavItems は広幅常設ナビ・狭幅オーバーレイの両方で描画されるため、ツリーも両モードで出る。 */}
-      <div className="mt-3 pt-3 border-t border-border">
-        <p className="text-xs text-fg-muted">ページ</p>
-        <PageTree onNavigate={onNavigate} />
-      </div>
-    </>
+    </nav>
   )
 }
 
@@ -159,6 +196,8 @@ function AppLayout({ children }: AppLayoutProps) {
             <Link to="/" className="text-xl font-bold text-fg no-underline">
               Janus
             </Link>
+            {/* グローバル導線 3 項目をロゴ直右に左詰めで横並び（広幅のみ）。狭幅はオーバーレイで出す。 */}
+            <HeaderNav pathname={pathname} />
           </div>
           <div className="flex items-center gap-3">
             <ThemeToggle />
@@ -206,12 +245,14 @@ function AppLayout({ children }: AppLayoutProps) {
         </header>
 
         <div className="flex">
-          {/* 常設サイドバー（§4.1）。広幅のみ表示（md:block）。モーダル挙動は適用しない。 */}
+          {/* 常設サイドバー（§4.1）。広幅のみ表示（md:block）。モーダル挙動は適用しない。
+              グローバル導線 3 項目はヘッダーへ移したため、ここにはページツリーだけを残す。
+              ヘッダーの横並びナビと aria-label を区別するため、こちらは「ページツリー」とする。 */}
           <nav
-            aria-label="グローバル"
+            aria-label="ページツリー"
             className="hidden w-56 shrink-0 border-r border-border bg-surface-raised p-4 md:block"
           >
-            <NavItems pathname={pathname} />
+            <PageTreeSection />
           </nav>
 
           <main className="mx-auto max-w-3xl flex-1 p-6">{children}</main>
@@ -236,11 +277,13 @@ function AppLayout({ children }: AppLayoutProps) {
             aria-label="グローバルナビゲーション"
             className="fixed inset-y-0 left-0 z-50 w-64 border-r border-border bg-surface-raised p-4"
           >
-            <NavItems
+            {/* 狭幅オーバーレイは従来どおり NAV_ITEMS（縦積み）+ ページツリーの両方を出す。 */}
+            <NavLinkList
               pathname={pathname}
               onNavigate={closeMenu}
               firstItemRef={firstNavItemRef}
             />
+            <PageTreeSection onNavigate={closeMenu} />
           </div>
         </div>
       )}
