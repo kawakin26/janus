@@ -1,9 +1,9 @@
 # markdown/ · custom-map/
 
-Markdown レンダラと独立アセットライブラリを参照する地図記法ディレクティブ（`:::custom-map`）を置くディレクトリです。
+Markdown レンダラと独立アセットライブラリを参照するマップ記法ディレクティブ（`:::custom-map`）を置くディレクトリです。
 
 - `markdown/`: react-markdown + remark-directive + remark-gfm によるレンダラ。未対応ディレクティブは無害なプレースホルダへ変換します。
-- `markdown/custom-map/`: GROWI プラグイン由来の地図ビューアを移植し、アセット解決を `StorageClient.resolveAssetUrl(AssetRef)` に統一しています。
+- `markdown/custom-map/`: GROWI プラグイン由来のマップビューアを移植し、アセット解決を `StorageClient.resolveAssetUrl(AssetRef)` に統一しています。
 
 ## ファイル構成
 

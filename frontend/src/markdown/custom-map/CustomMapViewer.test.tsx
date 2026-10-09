@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// 地図ビューアの回帰テスト（画像解決・link・未解決表示・最小化）。
+// マップビューアの回帰テスト（画像解決・link・未解決表示・最小化）。
 
 import { describe, expect, it } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -68,9 +68,9 @@ describe('CustomMapViewer', () => {
     const user = userEvent.setup()
     const { container } = renderViewer(async () => 'https://cdn/plan.png')
     await user.click(screen.getByRole('button', { name: 'マップを開く' }))
-    const dialog = await screen.findByRole('dialog', { name: '地図ビューア' })
+    const dialog = await screen.findByRole('dialog', { name: 'マップビューア' })
     expect(dialog).toHaveAttribute('aria-modal', 'true')
-    expect(dialog).toHaveAttribute('aria-label', '地図ビューア')
+    expect(dialog).toHaveAttribute('aria-label', 'マップビューア')
     await waitFor(() => expect(within(dialog).getByRole('img')).toHaveAttribute('src', 'https://cdn/plan.png'))
     expect(container.querySelectorAll('[data-map-marker="true"]')).toHaveLength(2)
     expect(within(dialog).getByText('入口')).toBeInTheDocument()
@@ -99,7 +99,7 @@ describe('CustomMapViewer', () => {
     const user = userEvent.setup()
     const { container } = renderViewer(async () => 'https://cdn/plan.png')
     await user.click(screen.getByRole('button', { name: 'マップを開く' }))
-    await screen.findByRole('dialog', { name: '地図ビューア' })
+    await screen.findByRole('dialog', { name: 'マップビューア' })
     const pin = container.querySelector('[data-marker-pin="true"]') as HTMLElement
     expect(pin.getAttribute('data-minimized')).toBe('false')
     await user.click(pin)

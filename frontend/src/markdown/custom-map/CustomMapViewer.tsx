@@ -1,4 +1,4 @@
-// 地図ビューア React コンポーネント（タスク 11 / 要件 3-1, 3-2, 3-3, 3-5）。
+// マップビューア React コンポーネント（タスク 11 / 要件 3-1, 3-2, 3-3, 3-5）。
 //
 // 出典: GROWI プラグイン growi-plugin-custom-map v0.3.1 の src/viewer.ts からの移植。
 // バニラ DOM 直接操作だった描画を React 化し、GROWI API 依存（添付解決・現在ページ解決・
@@ -58,7 +58,7 @@ function ensureBlinkStyle(): void {
 }
 
 /**
- * 地図ビューア。閉じた状態では「マップを開く」ボタン、クリックでモーダルを開く。
+ * マップビューア。閉じた状態では「マップを開く」ボタン、クリックでモーダルを開く。
  * モーダル内で画像の上にマーカーを重畳し、パン/ズーム/回転・最小化/復帰・
  * 写真/説明ポップアップを提供する。
  */
@@ -358,7 +358,7 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="地図ビューア"
+      aria-label="マップビューア"
     >
       <div
         className="relative rounded-lg bg-surface-raised p-5 shadow-sm max-w-[90vw] max-h-[90vh]"

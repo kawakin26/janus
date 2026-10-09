@@ -3,12 +3,12 @@
 // 方針:
 // - remark-directive を有効にすると `:::custom-map` 等は mdast の
 //   containerDirective / leafDirective / textDirective ノードとして AST に入る。
-//   タスク 10 では地図描画（custom-map の実レンダリング）はスコープ外（タスク 11）。
+//   タスク 10 ではマップ描画（custom-map の実レンダリング）はスコープ外（タスク 11）。
 // - そこで各ディレクティブノードに hName / hProperties を設定し、
 //   対応する HTML 要素（text/leaf は span、container は div）として素通し描画する。
 //   `data-directive="<name>"` 属性を目印として残し、タスク 11 で実ビューアへ差し替えられるようにする。
 // - 既に hName が設定済みのノード（他プラグインが処理済み）は上書きしない。
-// - 地図描画・アセット解決は一切行わない。クラッシュせず本文テキストを素通し表示する。
+// - マップ描画・アセット解決は一切行わない。クラッシュせず本文テキストを素通し表示する。
 
 import { visit } from 'unist-util-visit'
 import type { Root } from 'mdast'

@@ -62,7 +62,7 @@ function buildComponents(): Components {
       )
     },
     // custom-map 記法は remarkCustomMap が data-custom-map 付きの div に変換する。
-    // その div を専用の地図ビューアへ差し替える。それ以外の div は素通しする。
+    // その div を専用のマップビューアへ差し替える。それ以外の div は素通しする。
     div({ children, ...rest }) {
       // react-markdown は node を渡すが描画には使わないため取り除く。
       const { node: _node, ...domProps } = rest as Record<string, unknown>

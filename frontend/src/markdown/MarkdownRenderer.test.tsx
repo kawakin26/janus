@@ -30,7 +30,7 @@ describe('MarkdownRenderer', () => {
     expect(screen.getByRole('cell', { name: 'foo' })).toBeInTheDocument()
   })
 
-  it('custom-map を地図ビューア（「マップを開く」ボタン）として描画する', () => {
+  it('custom-map をマップビューア（「マップを開く」ボタン）として描画する', () => {
     const body = ':::custom-map{folder="maps" filename="map.png"}\n\n- x=10 y=20 label="A"\n:::'
     render(
       <StorageProvider client={createStubStorage({ resolveAssetUrl: async () => null })}>

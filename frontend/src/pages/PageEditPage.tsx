@@ -132,7 +132,7 @@ function PageEditPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // 地図 GUI 編集の状態。mapEditing が null でなければエディタを開いている。
+  // マップ GUI 編集の状態。mapEditing が null でなければエディタを開いている。
   // blockIndex が null のときは本文末尾へ新規ブロックを追加するモード。
   const [mapEditing, setMapEditing] = useState<{ blockIndex: number | null; data: MapData } | null>(
     null,
@@ -175,7 +175,7 @@ function PageEditPage() {
     if (!block) return
     const data = parseCustomMapBlock(body.slice(block.start, block.end))
     if (data === null) {
-      setMapEditError('この地図ブロックを読み込めませんでした。')
+      setMapEditError('このマップブロックを読み込めませんでした。')
       return
     }
     setMapEditing({ blockIndex, data })
@@ -476,7 +476,7 @@ function PageEditPage() {
           />
         </div>
 
-        <section className="flex flex-col gap-1.5" aria-label="地図 GUI 編集">
+        <section className="flex flex-col gap-1.5" aria-label="マップ GUI 編集">
           {mapEditError !== null && (
             <p role="alert" aria-live="assertive" className={ALERT_ERROR_CLASS}>
               {mapEditError}
@@ -484,10 +484,10 @@ function PageEditPage() {
           )}
           {mapEditing === null ? (
             <div className="flex items-center gap-2">
-              <span className="mr-1 text-sm font-semibold text-fg-muted">地図</span>
+              <span className="mr-1 text-sm font-semibold text-fg-muted">マップ</span>
               {/* 新規作成はアクセント（主要アクション）、既存の編集は中立の normal。 */}
               <button type="button" onClick={openNewMapBlock} className={BUTTON_ACCENT_CLASS}>
-                地図を追加
+                マップを追加
               </button>
               {Array.from({ length: customMapBlockCount }, (_, i) => (
                 <button
@@ -496,7 +496,7 @@ function PageEditPage() {
                   onClick={() => openMapBlock(i)}
                   className={BUTTON_NORMAL_CLASS}
                 >
-                  地図 {i + 1} を編集
+                  マップ {i + 1} を編集
                 </button>
               ))}
             </div>
@@ -509,10 +509,10 @@ function PageEditPage() {
               <div className="flex items-center gap-2">
                 {/* 本文へ反映は確定アクション=アクセント、やめる（取り消し）は中立=normal。 */}
                 <button type="button" onClick={applyMapEditing} className={BUTTON_ACCENT_CLASS}>
-                  地図を本文へ反映
+                  マップを本文へ反映
                 </button>
                 <button type="button" onClick={cancelMapEditing} className={BUTTON_NORMAL_CLASS}>
-                  地図編集をやめる
+                  マップ編集をやめる
                 </button>
               </div>
             </div>

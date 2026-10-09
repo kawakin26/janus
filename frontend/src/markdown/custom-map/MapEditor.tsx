@@ -1,4 +1,4 @@
-// 地図 GUI 編集コンポーネント（設計 §7.4/§8・要件 3A-MAP-1/5/7/8・3A-PHOTO-1〜5）。
+// マップ GUI 編集コンポーネント（設計 §7.4/§8・要件 3A-MAP-1/5/7/8・3A-PHOTO-1〜5）。
 //
 // 方針:
 // - props は編集対象 MapData と onChange(next) のみ（保存は PageEditPage が担う）。
