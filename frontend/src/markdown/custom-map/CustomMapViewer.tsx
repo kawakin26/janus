@@ -12,7 +12,15 @@ import { useStorage } from '../../storage/StorageProvider'
 import { usePageError } from '../../pages/use-page-error'
 import type { PageErrorHandler } from '../../pages/use-page-error'
 import type { MapData, MarkerData } from './types'
-import { PIN_SIZE_DEFAULT, LABEL_SIZE_DEFAULT, clamp, textColorForBg } from './map-utils'
+import { PIN_SIZE_DEFAULT, LABEL_SIZE_DEFAULT, normalizeRotate, textColorForBg } from './map-utils'
+import {
+  stageTransform,
+  markerInnerTransform,
+  computeFitView,
+  zoomAround,
+  pinchView,
+  panView,
+} from './map-viewport'
 import { DEFAULT_OPEN_LABEL, getMinimizedPinSize } from './config'
 import { resolveMapImageUrl, resolvePhotoUrl, assetRefLabel } from './resolve-assets'
 
@@ -125,7 +133,7 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
   // 各マーカーの内側要素（回転・スケール打ち消し用）。
   const markerInnerRefs = useRef<(HTMLDivElement | null)[]>([])
 
-  const rotate = mapData.rotate || 0
+  const rotate = normalizeRotate(mapData.rotate || 0)
 
   // 点滅 CSS を注入する（モーダル表示時）。
   useEffect(() => {
@@ -176,29 +184,14 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
   // ビュー状態（scale / 平行移動）。描画中に書き換えるため ref で保持する。
   const view = useRef({ scale: mapData.scale || 1, tx: 0, ty: 0 })
 
-  // 元画像座標(px,py)を rotate + scale した後の相対オフセットを返す。
-  // transform は translate(tx,ty) rotate(rot) scale(s) の順で適用される前提。
-  const rotScale = useCallback(
-    (px: number, py: number, s: number): { x: number; y: number } => {
-      const rad = (rotate * Math.PI) / 180
-      const cosR = Math.cos(rad)
-      const sinR = Math.sin(rad)
-      const sx = px * s
-      const sy = py * s
-      return { x: sx * cosR - sy * sinR, y: sx * sinR + sy * cosR }
-    },
-    [rotate],
-  )
-
   const applyTransform = useCallback(() => {
     const stage = stageRef.current
     if (!stage) return
-    const { scale, tx, ty } = view.current
-    stage.style.transform = `translate(${tx}px, ${ty}px) rotate(${rotate}deg) scale(${scale})`
+    stage.style.transform = stageTransform(view.current, { rotate })
     // マーカーの中身は回転を打ち消して常に正立させ、拡大の逆数でサイズを一定に保つ。
-    const inv = scale ? 1 / scale : 1
-    for (const inner of markerInnerRefs.current) {
-      if (inner) inner.style.transform = `translate(-50%, -50%) rotate(${-rotate}deg) scale(${inv})`
+    const inner = markerInnerTransform(view.current.scale, { rotate })
+    for (const el of markerInnerRefs.current) {
+      if (el) el.style.transform = inner
     }
   }, [rotate])
 
@@ -214,25 +207,19 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
     stage.style.width = `${naturalW}px`
     stage.style.height = `${naturalH}px`
 
-    const vpW = viewport.clientWidth
-    const vpH = viewport.clientHeight
-
-    // 90/270 度回転では見かけの幅・高さが入れ替わる。
-    const swap = rotate === 90 || rotate === 270
-    const dispW = swap ? naturalH : naturalW
-    const dispH = swap ? naturalW : naturalH
-    const fitScale = dispW && dispH ? Math.min(vpW / dispW, vpH / dispH) : 1
-    const baseScale = (fitScale || 1) * (mapData.scale || 1)
-    view.current.scale = baseScale
-
-    const centerX = (mapData.cx / 100) * naturalW
-    const centerY = (mapData.cy / 100) * naturalH
-    const off = rotScale(centerX, centerY, baseScale)
-    view.current.tx = vpW / 2 - off.x
-    view.current.ty = vpH / 2 - off.y
+    view.current = computeFitView({
+      naturalW,
+      naturalH,
+      viewportW: viewport.clientWidth,
+      viewportH: viewport.clientHeight,
+      mapScale: mapData.scale || 1,
+      cx: mapData.cx,
+      cy: mapData.cy,
+      ctx: { rotate },
+    })
 
     applyTransform()
-  }, [rotate, mapData.scale, mapData.cx, mapData.cy, rotScale, applyTransform])
+  }, [rotate, mapData.scale, mapData.cx, mapData.cy, applyTransform])
 
   // ---- パン / ピンチ / ホイールズーム（Pointer Events / wheel）----
   const pointers = useRef(new Map<number, { x: number; y: number }>())
@@ -284,17 +271,16 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
 
       if (pointers.current.size >= 2) {
         const [a, b] = Array.from(pointers.current.values())
-        const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1
-        const factor = dist / pinch.current.startDist
-        const newScale = clamp(pinch.current.startScale * factor, 0.02, 40)
-        const ratio = newScale / pinch.current.startScale
-        view.current.tx = pinch.current.cx - (pinch.current.cx - pinch.current.startTx) * ratio
-        view.current.ty = pinch.current.cy - (pinch.current.cy - pinch.current.startTy) * ratio
-        view.current.scale = newScale
+        view.current = pinchView(pinch.current, a.x, a.y, b.x, b.y)
         applyTransform()
       } else if (pointers.current.size === 1) {
-        view.current.tx = pan.current.startTx + (e.clientX - pan.current.startX)
-        view.current.ty = pan.current.startTy + (e.clientY - pan.current.startY)
+        view.current = panView(
+          pan.current.startTx,
+          pan.current.startTy,
+          e.clientX - pan.current.startX,
+          e.clientY - pan.current.startY,
+          view.current.scale,
+        )
         applyTransform()
       }
     },
@@ -328,11 +314,7 @@ function MapModal({ mapData, storage, onError, onClose }: MapModalProps) {
       const px = e.clientX - rect.left
       const py = e.clientY - rect.top
       const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
-      const newScale = clamp(view.current.scale * factor, 0.02, 40)
-      const ratio = newScale / view.current.scale
-      view.current.tx = px - (px - view.current.tx) * ratio
-      view.current.ty = py - (py - view.current.ty) * ratio
-      view.current.scale = newScale
+      view.current = zoomAround(view.current, px, py, factor)
       applyTransform()
     }
     viewport.addEventListener('wheel', onWheel, { passive: false })
