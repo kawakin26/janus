@@ -2,7 +2,8 @@
 //
 // 方針:
 // - username/password フォーム。label と input を htmlFor/id で関連付け、送信ボタンは type="submit"。
-//   エラーは role="alert" / aria-live で読み上げ対象にする（アクセシビリティ配慮）。
+//   エラーは既存 Alert（error variant・role="alert"）で読み上げ対象にする（アクセシビリティ配慮）。
+// - レイアウトは ModeGate と同じ中央寄せカードをデザイントークンだけで組む（独自色は使わない）。
 // - 送信で useAuth().login を呼ぶ。失敗（ApiError）時は detail があれば表示、無ければ汎用メッセージ。
 // - 成功時は元ページ（location.state.from）か / へ replace 遷移する。
 // - 既にログイン済み（user!==null）で /login に来たら / へリダイレクトする。
@@ -12,6 +13,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { Alert } from '../components/ui/Alert'
 import { Button } from '../components/ui/Button'
 import { writeMode } from '../storage/mode'
 import { ApiError } from '../storage/types'
@@ -64,47 +66,63 @@ function LoginPage() {
     }
   }
 
+  // レイアウトは ModeGate と同じ「全画面中央寄せカード」をデザイントークンだけで組む。
+  // 外側で水平/垂直中央、内側カードにフォームを縦積みで載せる。文言・入力属性は不変。
   return (
-    <main>
-      <h1>ログイン</h1>
-      <form onSubmit={handleSubmit} noValidate>
-        {error !== null && (
-          <p role="alert" aria-live="assertive">
-            {error}
-          </p>
-        )}
-        <div>
-          <label htmlFor="username">ユーザー名</label>
-          <input
-            id="username"
-            name="username"
-            type="text"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
+    <div className="min-h-screen flex items-center justify-center bg-surface text-fg px-4">
+      <main className="w-full max-w-sm rounded-lg border border-border bg-surface-raised p-8">
+        <h1 className="text-xl font-semibold">ログイン</h1>
+        <form onSubmit={handleSubmit} noValidate className="mt-6 flex flex-col gap-4">
+          {/* エラーは既存 Alert（error variant・role="alert"）で割り込み通知する。 */}
+          {error !== null && <Alert variant="error">{error}</Alert>}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="username">ユーザー名</label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              className="w-full"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="password">パスワード</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full"
+            />
+          </div>
+          {/* 主要アクションは accent。type="submit" を保持して Enter 送信を維持する。 */}
+          <Button
+            variant="accent"
+            type="submit"
+            disabled={submitting}
+            className="w-full justify-center"
+          >
+            {submitting ? 'ログイン中...' : 'ログイン'}
+          </Button>
+        </form>
+        {/* フォーム外の副次導線。区切り線で分けて縦に揃える。 */}
+        <div className="mt-6 border-t border-border pt-6">
+          <Button
+            type="button"
+            onClick={handleReturnToLocalMode}
+            className="w-full justify-center"
+          >
+            ローカルモードへ戻る
+          </Button>
         </div>
-        <div>
-          <label htmlFor="password">パスワード</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
-        <button type="submit" disabled={submitting}>
-          {submitting ? 'ログイン中...' : 'ログイン'}
-        </button>
-      </form>
-      <Button type="button" onClick={handleReturnToLocalMode}>
-        ローカルモードへ戻る
-      </Button>
-    </main>
+      </main>
+    </div>
   )
 }
 
