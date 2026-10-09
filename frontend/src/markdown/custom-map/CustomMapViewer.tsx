@@ -39,7 +39,11 @@ function withLineBreaks(text: string): string {
   return text.split('|').join('\n')
 }
 
-// desc/写真のあるマーカーのピンを点滅させる CSS を一度だけ注入する。
+// マーカーのピンを点滅させる CSS を一度だけ注入する。
+// 2 種類の点滅を用意する:
+//  - 薄い点滅(blink): desc/写真を持つ通常マーカーの演出。opacity:0.3 までしか落とさず操作対象が消えない。
+//  - 強い点滅(blink-strong): 非表示化(minimized)中のマーカー。opacity:0 まで完全に消え、
+//    隠れた部分を確認できるよう消灯の滞留区間を薄い点滅の実効滅時間の約2倍に取る。
 const BLINK_STYLE_ID = 'janus-custom-map-blink-style'
 function ensureBlinkStyle(): void {
   if (typeof document === 'undefined') return
@@ -53,6 +57,16 @@ function ensureBlinkStyle(): void {
 }
 .janus-custom-map-pin-blink {
   animation: janus-custom-map-blink 1.2s ease-in-out infinite;
+}
+@keyframes janus-custom-map-blink-strong {
+  0% { opacity: 1; }
+  20% { opacity: 0; }
+  60% { opacity: 0; }
+  80% { opacity: 1; }
+  100% { opacity: 1; }
+}
+.janus-custom-map-pin-blink-strong {
+  animation: janus-custom-map-blink-strong 1.2s ease-in-out infinite;
 }`
   document.head.appendChild(style)
 }
@@ -458,9 +472,16 @@ interface MarkerProps {
   onShowDetail: () => void
 }
 
-/** マーカー（ピン＋ラベル）。クリックで最小化⇔復帰、右クリック/ロングプレスで詳細。 */
+/**
+ * マーカー（ピン＋ラベル）。操作仕様:
+ *  - 通常表示中: 左クリック/タップ → 詳細ポップアップ、右クリック/ロングプレス → 非表示化（点滅）。
+ *  - 点滅（非表示）中: 左クリック/タップ/右クリック/ロングプレスのいずれでも復帰（非表示解除）のみ。
+ *    点滅中は詳細表示も再非表示化も受け付けない。自動復帰（restore 秒後）は従来どおり。
+ */
 function Marker({ marker, mapData, rotate, innerRef, onShowDetail }: MarkerProps) {
   const [minimized, setMinimized] = useState(false)
+  // 500ms ロングプレスの遅延コールバックが発火時点の最新 minimized を参照できるよう鏡写しする。
+  const minimizedRef = useRef(false)
   const restoreTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const longPressed = useRef(false)
@@ -485,20 +506,51 @@ function Marker({ marker, mapData, rotate, innerRef, onShowDetail }: MarkerProps
     }
   }, [])
 
-  const toggleMinimize = useCallback(() => {
-    setMinimized((prev) => {
-      const next = !prev
-      if (restoreTimer.current) clearTimeout(restoreTimer.current)
-      if (next) {
-        // 一定時間後に自動復帰する。
-        restoreTimer.current = setTimeout(() => setMinimized(false), restoreSec * 1000)
-      }
-      return next
-    })
+  // minimized を ref に鏡写しする（遅延コールバックから最新値を読むため）。
+  useEffect(() => {
+    minimizedRef.current = minimized
+  }, [minimized])
+
+  // 非表示化（点滅）する。自動復帰タイマーを開始する。
+  const minimize = useCallback(() => {
+    if (restoreTimer.current) clearTimeout(restoreTimer.current)
+    restoreTimer.current = setTimeout(() => setMinimized(false), restoreSec * 1000)
+    setMinimized(true)
   }, [restoreSec])
 
+  // 復帰（非表示解除）する。自動復帰タイマーを止める。
+  const restore = useCallback(() => {
+    if (restoreTimer.current) {
+      clearTimeout(restoreTimer.current)
+      restoreTimer.current = undefined
+    }
+    setMinimized(false)
+  }, [])
+
+  // 左クリック/タップ相当の主操作: 通常時は詳細、点滅中は復帰のみ。
+  const handlePrimary = useCallback(() => {
+    if (minimizedRef.current) {
+      restore()
+      return
+    }
+    onShowDetail()
+  }, [restore, onShowDetail])
+
+  // 右クリック/ロングプレス相当の副操作: 通常時は非表示化、点滅中は復帰のみ。
+  const handleSecondary = useCallback(() => {
+    if (minimizedRef.current) {
+      restore()
+      return
+    }
+    minimize()
+  }, [restore, minimize])
+
   const curPinPx = minimized ? minPinPx : pinPx
-  const blink = minimized || hasDetail
+  const blinkClass = minimized
+    ? 'janus-custom-map-pin-blink-strong'
+    : hasDetail
+      ? 'janus-custom-map-pin-blink'
+      : undefined
 
   const onPointerDown = (e: ReactPointerEvent<HTMLElement>) => {
     e.stopPropagation()
@@ -508,7 +560,7 @@ function Marker({ marker, mapData, rotate, innerRef, onShowDetail }: MarkerProps
       if (longPressTimer.current) clearTimeout(longPressTimer.current)
       longPressTimer.current = setTimeout(() => {
         longPressed.current = true
-        onShowDetail()
+        handleSecondary()
       }, 500)
     }
   }
@@ -532,12 +584,12 @@ function Marker({ marker, mapData, rotate, innerRef, onShowDetail }: MarkerProps
       return
     }
     if (e.pointerType === 'mouse' && e.button !== 0) return
-    toggleMinimize()
+    handlePrimary()
   }
   const onContextMenu = (e: ReactPointerEvent<HTMLElement> | React.MouseEvent<HTMLElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    onShowDetail()
+    handleSecondary()
   }
 
   const interaction = {
@@ -588,7 +640,7 @@ function Marker({ marker, mapData, rotate, innerRef, onShowDetail }: MarkerProps
           {...interaction}
           data-marker-pin="true"
           data-minimized={minimized ? 'true' : 'false'}
-          className={blink ? 'janus-custom-map-pin-blink' : undefined}
+          className={blinkClass}
           style={{
             position: 'relative',
             width: `${curPinPx}px`,
@@ -617,9 +669,14 @@ function DetailPopup({ detail, onClose }: DetailPopupProps) {
   return (
     <div
       className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/80"
-      onClick={onClose}
+      onClick={(e) => {
+        // 背後の MapModal 最外 div（onClick で閉じる）まで伝播させない。
+        e.stopPropagation()
+        onClose()
+      }}
       onContextMenu={(e) => {
         e.preventDefault()
+        e.stopPropagation()
         onClose()
       }}
       role="dialog"

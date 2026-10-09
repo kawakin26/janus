@@ -2,7 +2,7 @@
 // マップビューアの回帰テスト（画像解決・link・未解決表示・最小化）。
 
 import { describe, expect, it } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { StorageProvider } from '../../storage/StorageProvider'
@@ -25,9 +25,15 @@ const mapData: MapData = {
   pinSize: 12,
   labelSize: 12,
   markers: [
-    { x: 10, y: 20, label: '入口', desc: '', color: '#ff3b30', photos: [] },
+    // 詳細（desc）を持つマーカー。左クリックで詳細ポップアップが開く。
+    { x: 10, y: 20, label: '入口', desc: '入口の説明', color: '#ff3b30', photos: [] },
     { x: 30, y: 40, label: '出口', desc: '', color: '#00ff00', photos: [] },
   ],
+}
+
+/** 1 件目のマーカーのピン要素を返す。 */
+function firstPin(container: HTMLElement): HTMLElement {
+  return container.querySelector('[data-marker-pin="true"]') as HTMLElement
 }
 
 function renderViewer(resolveAssetUrl: (ref: MapData['assetRef']) => Promise<string | null>) {
@@ -95,14 +101,85 @@ describe('CustomMapViewer', () => {
     expect(screen.queryByText('マップ/画像が見つかりません')).not.toBeInTheDocument()
   })
 
-  it('マーカークリックで最小化状態に切り替わる', async () => {
+  it('通常表示マーカーの左クリックで詳細ポップアップが開く', async () => {
     const user = userEvent.setup()
     const { container } = renderViewer(async () => 'https://cdn/plan.png')
     await user.click(screen.getByRole('button', { name: 'マップを開く' }))
     await screen.findByRole('dialog', { name: 'マップビューア' })
-    const pin = container.querySelector('[data-marker-pin="true"]') as HTMLElement
+    const pin = firstPin(container)
     expect(pin.getAttribute('data-minimized')).toBe('false')
     await user.click(pin)
-    await waitFor(() => expect((container.querySelector('[data-marker-pin="true"]') as HTMLElement).getAttribute('data-minimized')).toBe('true'))
+    expect(await screen.findByRole('dialog', { name: 'マーカー詳細' })).toBeInTheDocument()
+    // 詳細を開いても非表示化はされない。
+    expect(firstPin(container).getAttribute('data-minimized')).toBe('false')
+  })
+
+  it('通常表示マーカーの右クリックで非表示化（点滅）する（詳細は開かない）', async () => {
+    const user = userEvent.setup()
+    const { container } = renderViewer(async () => 'https://cdn/plan.png')
+    await user.click(screen.getByRole('button', { name: 'マップを開く' }))
+    await screen.findByRole('dialog', { name: 'マップビューア' })
+    const pin = firstPin(container)
+    expect(pin.getAttribute('data-minimized')).toBe('false')
+    fireEvent.contextMenu(pin)
+    await waitFor(() => expect(firstPin(container).getAttribute('data-minimized')).toBe('true'))
+    expect(screen.queryByRole('dialog', { name: 'マーカー詳細' })).not.toBeInTheDocument()
+  })
+
+  it('点滅中マーカーの左クリックで復帰する', async () => {
+    const user = userEvent.setup()
+    const { container } = renderViewer(async () => 'https://cdn/plan.png')
+    await user.click(screen.getByRole('button', { name: 'マップを開く' }))
+    await screen.findByRole('dialog', { name: 'マップビューア' })
+    const pin = firstPin(container)
+    // まず右クリックで非表示化する。
+    fireEvent.contextMenu(pin)
+    await waitFor(() => expect(firstPin(container).getAttribute('data-minimized')).toBe('true'))
+    // 左クリックで復帰する（詳細は開かない）。
+    await user.click(firstPin(container))
+    await waitFor(() => expect(firstPin(container).getAttribute('data-minimized')).toBe('false'))
+    expect(screen.queryByRole('dialog', { name: 'マーカー詳細' })).not.toBeInTheDocument()
+  })
+
+  it('点滅中マーカーの右クリックで復帰する（詳細は開かない）', async () => {
+    const user = userEvent.setup()
+    const { container } = renderViewer(async () => 'https://cdn/plan.png')
+    await user.click(screen.getByRole('button', { name: 'マップを開く' }))
+    await screen.findByRole('dialog', { name: 'マップビューア' })
+    const pin = firstPin(container)
+    fireEvent.contextMenu(pin)
+    await waitFor(() => expect(firstPin(container).getAttribute('data-minimized')).toBe('true'))
+    fireEvent.contextMenu(firstPin(container))
+    await waitFor(() => expect(firstPin(container).getAttribute('data-minimized')).toBe('false'))
+    expect(screen.queryByRole('dialog', { name: 'マーカー詳細' })).not.toBeInTheDocument()
+  })
+
+  it('詳細ポップアップを閉じてもマップビューは残る', async () => {
+    const user = userEvent.setup()
+    const { container } = renderViewer(async () => 'https://cdn/plan.png')
+    await user.click(screen.getByRole('button', { name: 'マップを開く' }))
+    await screen.findByRole('dialog', { name: 'マップビューア' })
+    // 左クリックで詳細を開く。
+    await user.click(firstPin(container))
+    const detail = await screen.findByRole('dialog', { name: 'マーカー詳細' })
+    // 詳細の背景クリックで閉じる。
+    await user.click(detail)
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'マーカー詳細' })).not.toBeInTheDocument())
+    // マップビューは残る（要件3 回帰）。
+    expect(screen.getByRole('dialog', { name: 'マップビューア' })).toBeInTheDocument()
+  })
+
+  it('点滅 keyframes は minimized 用に opacity:0 の滞留区間を持ち hasDetail 用の薄い点滅を別クラスで残す', async () => {
+    const user = userEvent.setup()
+    renderViewer(async () => 'https://cdn/plan.png')
+    await user.click(screen.getByRole('button', { name: 'マップを開く' }))
+    await screen.findByRole('dialog', { name: 'マップビューア' })
+    const css = document.getElementById('janus-custom-map-blink-style')?.textContent ?? ''
+    // minimized 用（完全消去）: opacity:0 の消灯滞留区間（20%〜60%）を持つ。
+    expect(css).toContain('janus-custom-map-blink-strong')
+    expect(css).toMatch(/20%\s*\{\s*opacity:\s*0;\s*\}/)
+    expect(css).toMatch(/60%\s*\{\s*opacity:\s*0;\s*\}/)
+    // hasDetail 用（従来どおり薄い点滅）: opacity:0.3 が別クラスで残る。
+    expect(css).toMatch(/50%\s*\{\s*opacity:\s*0\.3;\s*\}/)
   })
 })
