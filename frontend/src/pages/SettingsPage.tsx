@@ -25,6 +25,13 @@ import {
 } from '../storage/export-import'
 import { clearMode, readMode } from '../storage/mode'
 import { ApiError } from '../storage/types'
+import {
+  LONGPRESS_MS_MIN,
+  clearUserLongPressMs,
+  readUserLongPressMs,
+  resolveDefaultMs,
+  writeUserLongPressMs,
+} from '../markdown/custom-map/longpress-config'
 
 function SettingsPage() {
   // 現在のモード。サーバーモードならエクスポート/インポートを出さない（design §3.9）。
@@ -36,6 +43,35 @@ function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // マップ編集（長押し閾値）セクション（design §9）。モード非依存で常に表示する。
+  // 初期値はユーザー設定（localStorage）があればそれ、無ければシステム既定（env or 500）。
+  const [longPressMs, setLongPressMs] = useState<string>(() =>
+    String(readUserLongPressMs() ?? resolveDefaultMs()),
+  )
+  const [longPressStatus, setLongPressStatus] = useState<string | null>(null)
+  const [longPressError, setLongPressError] = useState<string | null>(null)
+
+  // 保存: 500 未満/非数は保存せず alert。正常なら writeUserLongPressMs → status。
+  const handleSaveLongPress = () => {
+    const value = Number(longPressMs)
+    if (!Number.isFinite(value) || value < LONGPRESS_MS_MIN) {
+      setLongPressStatus(null)
+      setLongPressError(`${LONGPRESS_MS_MIN} 以上の数値を入力してください`)
+      return
+    }
+    writeUserLongPressMs(value)
+    setLongPressError(null)
+    setLongPressStatus('保存しました')
+  }
+
+  // 既定に戻す: ユーザー設定を削除し、入力欄をシステム既定へ戻す。
+  const handleResetLongPress = () => {
+    clearUserLongPressMs()
+    setLongPressMs(String(resolveDefaultMs()))
+    setLongPressError(null)
+    setLongPressStatus('既定に戻しました')
+  }
 
   // エクスポート: openDb() で DB を開き exportAndDownload に渡す。進捗テキストを表示する。
   const handleExport = async () => {
@@ -162,6 +198,46 @@ function SettingsPage() {
         <Button type="button" onClick={handleSwitchMode}>
           モード切替
         </Button>
+      </section>
+
+      <section className="my-6" aria-labelledby="map-edit-heading">
+        <h2 id="map-edit-heading">マップ編集</h2>
+        <div className="grid gap-2 max-w-lg">
+          <p className="text-sm text-fg-muted">
+            マーカー追加の長押し時間（ミリ秒）を調整できます。最小 {LONGPRESS_MS_MIN}ms。
+          </p>
+          <p className="text-sm text-fg-muted">
+            システム既定: {resolveDefaultMs()}ms
+          </p>
+          <div className="grid gap-2">
+            <label htmlFor="map-longpress-ms" className="text-sm">
+              長押し時間（ミリ秒）
+            </label>
+            <input
+              id="map-longpress-ms"
+              type="number"
+              min={LONGPRESS_MS_MIN}
+              step={50}
+              value={longPressMs}
+              onChange={(event) => setLongPressMs(event.target.value)}
+              className="max-w-40 rounded border border-border bg-control px-2 py-1 text-fg"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" onClick={handleSaveLongPress}>
+              保存
+            </Button>
+            <Button type="button" onClick={handleResetLongPress}>
+              既定に戻す
+            </Button>
+          </div>
+          {longPressStatus !== null && <p role="status">{longPressStatus}</p>}
+          {longPressError !== null && (
+            <p role="alert" className="text-danger">
+              {longPressError}
+            </p>
+          )}
+        </div>
       </section>
     </AppLayout>
   )

@@ -36,14 +36,33 @@ vi.mock('../storage/mode', () => ({
   readMode: vi.fn(() => 'local'),
   clearMode: vi.fn(),
 }))
+// 長押し閾値モジュール（FEAT-002）をモックして SettingsPage の『マップ編集』
+// セクションの保存/既定リセットの呼び出しだけを検証する。
+vi.mock('../markdown/custom-map/longpress-config', () => ({
+  LONGPRESS_MS_MIN: 500,
+  resolveDefaultMs: vi.fn(() => 500),
+  readUserLongPressMs: vi.fn(() => null),
+  writeUserLongPressMs: vi.fn(),
+  clearUserLongPressMs: vi.fn(),
+}))
 
 import { exportAndDownload, importFromZip } from '../storage/export-import'
 import { clearMode, readMode } from '../storage/mode'
+import {
+  clearUserLongPressMs,
+  readUserLongPressMs,
+  resolveDefaultMs,
+  writeUserLongPressMs,
+} from '../markdown/custom-map/longpress-config'
 
 const mockedReadMode = vi.mocked(readMode)
 const mockedExportAndDownload = vi.mocked(exportAndDownload)
 const mockedImportFromZip = vi.mocked(importFromZip)
 const mockedClearMode = vi.mocked(clearMode)
+const mockedResolveDefaultMs = vi.mocked(resolveDefaultMs)
+const mockedReadUserLongPressMs = vi.mocked(readUserLongPressMs)
+const mockedWriteUserLongPressMs = vi.mocked(writeUserLongPressMs)
+const mockedClearUserLongPressMs = vi.mocked(clearUserLongPressMs)
 
 // matchMedia のスタブ（AppLayout 内の ThemeToggle が useTheme を要求するため）。
 function installMatchMedia(initialMatches = false) {
@@ -67,6 +86,8 @@ beforeEach(() => {
   mockedReadMode.mockReturnValue('local')
   mockedImportFromZip.mockResolvedValue({ pageCount: 2, assetCount: 3 })
   mockedExportAndDownload.mockResolvedValue()
+  mockedResolveDefaultMs.mockReturnValue(500)
+  mockedReadUserLongPressMs.mockReturnValue(null)
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: { ...originalLocation, reload: vi.fn() },
@@ -194,5 +215,71 @@ describe('SettingsPage（サーバーモード）', () => {
     ).toBeInTheDocument()
     // モード切替は常に出る。
     expect(getPageModeButton()).toBeInTheDocument()
+  })
+})
+
+describe('SettingsPage（マップ編集セクション）', () => {
+  // 『マップ編集』セクションの長押し時間入力を取得する。
+  function getLongPressInput() {
+    return screen.getByLabelText('長押し時間（ミリ秒）') as HTMLInputElement
+  }
+  // セクション内の保存/既定に戻すボタンを region スコープで取得する。
+  function getMapEditRegion() {
+    return screen.getByRole('region', { name: 'マップ編集' })
+  }
+
+  it('500 未満の入力は保存されず role=alert の警告を表示する', async () => {
+    const user = userEvent.setup()
+    renderSettings()
+    await screen.findByRole('heading', { name: '設定' })
+
+    const input = getLongPressInput()
+    await user.clear(input)
+    await user.type(input, '300')
+    await user.click(within(getMapEditRegion()).getByRole('button', { name: '保存' }))
+
+    expect(mockedWriteUserLongPressMs).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('500 以上の数値を入力してください')
+  })
+
+  it('正常値の保存で writeUserLongPressMs が呼ばれ role=status を表示する', async () => {
+    const user = userEvent.setup()
+    renderSettings()
+    await screen.findByRole('heading', { name: '設定' })
+
+    const input = getLongPressInput()
+    await user.clear(input)
+    await user.type(input, '800')
+    await user.click(within(getMapEditRegion()).getByRole('button', { name: '保存' }))
+
+    expect(mockedWriteUserLongPressMs).toHaveBeenCalledTimes(1)
+    expect(mockedWriteUserLongPressMs).toHaveBeenCalledWith(800)
+    expect(screen.getByRole('status')).toHaveTextContent('保存しました')
+  })
+
+  it('『既定に戻す』で clearUserLongPressMs が呼ばれ入力が既定へ戻る', async () => {
+    const user = userEvent.setup()
+    mockedResolveDefaultMs.mockReturnValue(700)
+    mockedReadUserLongPressMs.mockReturnValue(1200)
+    renderSettings()
+    await screen.findByRole('heading', { name: '設定' })
+
+    const input = getLongPressInput()
+    expect(input.value).toBe('1200')
+
+    await user.click(within(getMapEditRegion()).getByRole('button', { name: '既定に戻す' }))
+
+    expect(mockedClearUserLongPressMs).toHaveBeenCalledTimes(1)
+    expect(getLongPressInput().value).toBe('700')
+    expect(screen.getByRole('status')).toHaveTextContent('既定に戻しました')
+  })
+
+  it('サーバーモードでもマップ編集セクションを表示する（モード非依存）', async () => {
+    mockedReadMode.mockReturnValue('server')
+    renderSettings()
+    await screen.findByRole('heading', { name: '設定' })
+
+    expect(screen.getByRole('region', { name: 'マップ編集' })).toBeInTheDocument()
+    expect(screen.getByLabelText('長押し時間（ミリ秒）')).toBeInTheDocument()
   })
 })
