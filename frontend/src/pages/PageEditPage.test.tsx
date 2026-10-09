@@ -449,6 +449,76 @@ describe('PageEditPage', () => {
     expect(screen.getByRole('button', { name: '描画 1 を編集' })).toBeEnabled()
   })
 
+  it('「マップを追加」でマップ編集モーダル（dialog, aria-label=マップ編集）がフォーム外に開く', async () => {
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage()),
+      // モーダルがマウント時に呼ぶ非同期（アセット一覧）をスタブで解決する。
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('既存の本文')).toBeInTheDocument()
+    })
+
+    // 開く前はモーダルが無い。
+    expect(screen.queryByRole('dialog', { name: 'マップ編集' })).toBeNull()
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'マップを追加' }))
+
+    // MapEditorModal が開く。
+    expect(await screen.findByRole('dialog', { name: 'マップ編集' })).toBeInTheDocument()
+    // 旧インライン展開（本文へ反映 / マップ編集をやめる）は存在しない。
+    expect(screen.queryByRole('button', { name: 'マップを本文へ反映' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'マップ編集をやめる' })).toBeNull()
+  })
+
+  it('マップ編集中はページ保存を拒否し（保存を呼ばず遷移しない）、破棄して閉じれば保存できる', async () => {
+    const updatePage = vi.fn(async () => makePage())
+    const client = createStubStorage({
+      currentUser: vi.fn(async () => sampleUser),
+      getPage: vi.fn(async () => makePage()),
+      updatePage,
+      listFolders: vi.fn(async () => []),
+      listAssets: vi.fn(async () => []),
+    })
+    renderEdit(client, '/edit/docs/intro')
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('既存の本文')).toBeInTheDocument()
+    })
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'マップを追加' }))
+    await screen.findByRole('dialog', { name: 'マップ編集' })
+
+    // 編集中は「ページを保存」が無効化され、submit しても保存・遷移しない（drawio と同じ二重ガード）。
+    const saveButton = screen.getByRole('button', { name: 'ページを保存' })
+    expect(saveButton).toBeDisabled()
+    await user.click(saveButton)
+    expect(updatePage).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('view')).toBeNull()
+
+    // 「破棄して閉じる」でモーダルを閉じると、ページ保存が有効化され保存できる。
+    await user.click(screen.getByRole('button', { name: '破棄して閉じる' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'マップ編集' })).toBeNull()
+    })
+    // 破棄なので本文は不変。
+    expect(screen.getByDisplayValue('既存の本文')).toBeInTheDocument()
+
+    const saveButtonAfter = screen.getByRole('button', { name: 'ページを保存' })
+    expect(saveButtonAfter).toBeEnabled()
+    await user.click(saveButtonAfter)
+    expect(updatePage).toHaveBeenCalledTimes(1)
+    await waitFor(() => {
+      expect(screen.getByTestId('view')).toBeInTheDocument()
+    })
+  })
+
   it('createPage が 409 を throw したとき日本語メッセージを表示し遷移しない', async () => {
     const createPage = vi.fn(async () => {
       throw new ApiError(409, 'conflict')

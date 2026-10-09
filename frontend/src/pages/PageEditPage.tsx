@@ -26,7 +26,7 @@ import remarkDirective from 'remark-directive'
 import { visit } from 'unist-util-visit'
 import type { Root } from 'mdast'
 import type { ContainerDirective } from 'mdast-util-directive'
-import MapEditor from '../markdown/custom-map/MapEditor'
+import MapEditorModal from '../markdown/custom-map/MapEditorModal'
 import { buildMapData } from '../markdown/custom-map/parse-map'
 import { serializeMapData } from '../markdown/custom-map/serialize-map'
 import { findCustomMapBlocks, replaceCustomMapBlock } from '../markdown/custom-map/map-block'
@@ -187,11 +187,13 @@ function PageEditPage() {
     setMapEditing({ blockIndex: null, data: emptyMapData() })
   }
 
-  // GUI 編集を本文へ反映する。対象ブロックだけを serializeMapData 出力で置換し、
-  // 本文の他テキストは保持する（§7.3）。新規は本文末尾へ追加する。
-  const applyMapEditing = () => {
+  // モーダルの「保存して閉じる」。モーダルが返す next:MapData を本文へ反映する。
+  // 対象ブロックだけを serializeMapData 出力で置換し、本文の他テキストは保持する（§7.3）。
+  // 新規（blockIndex===null）は本文末尾へ追加する。blockIndex はモーダルへ渡さず、
+  // ここ（mapEditing state）で解決する（Finding9）。
+  const handleMapSave = (next: MapData) => {
     if (mapEditing === null) return
-    const serialized = serializeMapData(mapEditing.data)
+    const serialized = serializeMapData(next)
     if (mapEditing.blockIndex === null) {
       const needsSeparator = body.length > 0 && !body.endsWith('\n')
       const prefix = body.length > 0 ? body + (needsSeparator ? '\n\n' : '\n') : ''
@@ -206,7 +208,8 @@ function PageEditPage() {
     setMapEditing(null)
   }
 
-  const cancelMapEditing = () => setMapEditing(null)
+  // モーダルの「破棄して閉じる」。本文は変更しない。
+  const handleMapDiscard = () => setMapEditing(null)
 
   // 既存 drawio ブロックを embed エディタで開く。
   // 表セル編集の飛び（問題2）回避のため既定で全画面オーバーレイで開く（案A）。
@@ -410,6 +413,12 @@ function PageEditPage() {
       setError('描画エディタを開いています。先に「描画編集を閉じる」で編集を確定してからページを保存してください。')
       return
     }
+    // マップ編集モーダル中もページ保存を拒否する（drawio と同じ二重ガード）。
+    // モーダル表示中は保存ボタンも disabled だが、キーボード submit 等の抜け道を塞ぐ。
+    if (mapEditing !== null) {
+      setError('マップを編集中です。先に「保存して閉じる」または「破棄して閉じる」でマップ編集を終えてからページを保存してください。')
+      return
+    }
     setError(null)
     setSubmitting(true)
     try {
@@ -482,41 +491,31 @@ function PageEditPage() {
               {mapEditError}
             </p>
           )}
-          {mapEditing === null ? (
-            <div className="flex items-center gap-2">
-              <span className="mr-1 text-sm font-semibold text-fg-muted">マップ</span>
-              {/* 新規作成はアクセント（主要アクション）、既存の編集は中立の normal。 */}
-              <button type="button" onClick={openNewMapBlock} className={BUTTON_ACCENT_CLASS}>
-                マップを追加
+          {/* 導線は常に表示する。編集はモーダル（MapEditorModal）で開くため、ここに
+              インライン展開は持たない。モーダル表示中は『ページを保存』を無効化する。 */}
+          <div className="flex items-center gap-2">
+            <span className="mr-1 text-sm font-semibold text-fg-muted">マップ</span>
+            {/* 新規作成はアクセント（主要アクション）、既存の編集は中立の normal。 */}
+            <button
+              type="button"
+              onClick={openNewMapBlock}
+              disabled={mapEditing !== null}
+              className={BUTTON_ACCENT_CLASS}
+            >
+              マップを追加
+            </button>
+            {Array.from({ length: customMapBlockCount }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => openMapBlock(i)}
+                disabled={mapEditing !== null}
+                className={BUTTON_NORMAL_CLASS}
+              >
+                マップ {i + 1} を編集
               </button>
-              {Array.from({ length: customMapBlockCount }, (_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => openMapBlock(i)}
-                  className={BUTTON_NORMAL_CLASS}
-                >
-                  マップ {i + 1} を編集
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div>
-              <MapEditor
-                mapData={mapEditing.data}
-                onChange={(next) => setMapEditing({ blockIndex: mapEditing.blockIndex, data: next })}
-              />
-              <div className="flex items-center gap-2">
-                {/* 本文へ反映は確定アクション=アクセント、やめる（取り消し）は中立=normal。 */}
-                <button type="button" onClick={applyMapEditing} className={BUTTON_ACCENT_CLASS}>
-                  マップを本文へ反映
-                </button>
-                <button type="button" onClick={cancelMapEditing} className={BUTTON_NORMAL_CLASS}>
-                  マップ編集をやめる
-                </button>
-              </div>
-            </div>
-          )}
+            ))}
+          </div>
         </section>
 
         <section className="flex flex-col gap-1.5" aria-label="drawio 描画 編集">
@@ -595,7 +594,7 @@ function PageEditPage() {
               onSubmit 側の guard と二重化（キーボード submit 等の抜け道も塞ぐ）。 */}
           <button
             type="submit"
-            disabled={submitting || drawioEditing !== null}
+            disabled={submitting || drawioEditing !== null || mapEditing !== null}
             className={BUTTON_ACCENT_CLASS}
           >
             {submitting ? '保存中...' : 'ページを保存'}
@@ -605,6 +604,16 @@ function PageEditPage() {
           </Link>
         </div>
       </form>
+      {/* マップ編集はモーダル（fixed inset-0）でフォーム全体を覆う。フォーム外へ出すことで
+          モーダル内の入力がフォーム送信に巻き込まれないようにする。blockIndex は
+          mapEditing state 側で解決し、モーダルへは mapData/onSave/onDiscard のみ渡す（Finding9）。 */}
+      {mapEditing !== null && (
+        <MapEditorModal
+          mapData={mapEditing.data}
+          onSave={handleMapSave}
+          onDiscard={handleMapDiscard}
+        />
+      )}
     </AppLayout>
   )
 }
